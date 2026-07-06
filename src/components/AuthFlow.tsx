@@ -149,10 +149,10 @@ export default function AuthFlow({ onLoginSuccess, showToast }: AuthFlowProps) {
       {/* Visual Logo Header */}
       <div className="flex items-center gap-3 mb-8">
         <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-lg font-display tracking-tight">
-          C
+          A
         </div>
         <div className="flex items-baseline">
-          <span className="text-xl font-medium tracking-tight text-ink font-display">Conduit</span>
+          <span className="text-xl font-medium tracking-tight text-ink font-display">Aira.AI</span>
           <span className="text-[10px] bg-surface-cream-strong text-muted px-1.5 py-0.5 rounded font-mono ml-2">v2.1</span>
         </div>
       </div>
@@ -163,7 +163,7 @@ export default function AuthFlow({ onLoginSuccess, showToast }: AuthFlowProps) {
         {/* Title area */}
         <div className="space-y-1.5 mb-6 text-center">
           <h2 className="text-xl font-medium text-ink font-display">
-            {mode === 'login' && 'Sign in to Conduit'}
+            {mode === 'login' && 'Sign in to Aira.AI'}
             {mode === 'register' && 'Request Access'}
           </h2>
           <p className="text-xs text-muted-soft leading-relaxed">
@@ -337,9 +337,8 @@ export default function AuthFlow({ onLoginSuccess, showToast }: AuthFlowProps) {
         )}
       </div>
 
-      {/* Visual footer details */}
       <span className="mt-8 text-[11px] text-muted-soft flex items-center gap-1.5">
-        <KeyRound className="w-3.5 h-3.5 text-primary" /> Secured by Conduit Gate Middleware
+        <KeyRound className="w-3.5 h-3.5 text-primary" /> Secured by Aira.AI Gate Middleware
       </span>
     </div>
   );

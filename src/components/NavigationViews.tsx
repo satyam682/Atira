@@ -1981,7 +1981,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary"></span>
               </span>
             </div>
-            <h2 className="text-2xl font-normal tracking-tight font-serif text-white">Conduit Management Console</h2>
+            <h2 className="text-2xl font-normal tracking-tight font-serif text-white">Aira.AI Management Console</h2>
             <p className="text-xs text-on-dark-soft max-w-xl leading-relaxed">
               Provision credit allocations, configure API throughput (RPM) limits, approve access-gate registration flows, and manipulate active routing nodes.
             </p>
@@ -2231,7 +2231,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
         <div className="bg-surface-card border border-hairline rounded-xl shadow-none overflow-hidden">
           <div className="p-5 border-b border-hairline-soft flex items-center justify-between">
             <div>
-              <h3 className="font-medium text-ink text-sm font-serif">Approved Conduit Users</h3>
+              <h3 className="font-medium text-ink text-sm font-serif">Approved Aira.AI Users</h3>
               <p className="text-xs text-muted-soft mt-0.5">Manage credit balances, expiration countdowns, and gateway throughput limits.</p>
             </div>
             <span className="text-xs bg-canvas text-primary font-medium px-2.5 py-0.5 rounded-full border border-hairline">

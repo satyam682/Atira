@@ -300,5 +300,29 @@
     "preview": "You're welcome, bhai! If you need any more assistance, feel ...",
     "timestamp": "Just now",
     "updated_at": "2026-07-06T17:55:29.616Z"
+  },
+  {
+    "id": "d6b1dbda-be00-413b-8457-e4a1d721f8e0",
+    "user_email": "satyamkadavla19@gmail.com",
+    "title": "hi",
+    "category": "chat",
+    "messages": [
+      {
+        "id": "u-1783362382483",
+        "role": "user",
+        "content": "hi",
+        "timestamp": "11:56 PM"
+      },
+      {
+        "id": "b-1783362384587",
+        "role": "assistant",
+        "content": "Hello! How can I assist you today?",
+        "timestamp": "11:56 PM",
+        "modelUsed": "Claude Opus 4.6"
+      }
+    ],
+    "preview": "Hello! How can I assist you today?",
+    "timestamp": "Just now",
+    "updated_at": "2026-07-06T18:26:24.594Z"
   }
 ]
