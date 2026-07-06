@@ -9,9 +9,11 @@ import { GoogleGenAI } from "@google/genai";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-const CREDENTIALS_FILE = path.join(process.cwd(), 'google_credentials.json');
+// On Vercel the filesystem is read-only except /tmp
+const DATA_DIR = process.env.VERCEL ? '/tmp' : process.cwd();
+const CREDENTIALS_FILE = path.join(DATA_DIR, 'google_credentials.json');
 
 interface GoogleCredentials {
   clientId: string;
@@ -54,7 +56,7 @@ app.use(express.json());
 // ACCESS REQUESTS & CREDITS DATABASE (JSON)
 // ==========================================
 
-const ACCESS_REQUESTS_FILE = path.join(process.cwd(), 'access_requests.json');
+const ACCESS_REQUESTS_FILE = path.join(DATA_DIR, 'access_requests.json');
 
 interface AccessRequest {
   id: string;
@@ -155,8 +157,8 @@ platformApiKeys.set('nx_live_9z1cx3b1d5_sk_live_v23r984712', {
 // SUPABASE REAL-TIME PERSISTENCE ENGINE
 // ==========================================
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://kldcrujdbrkpkhnvpbfx.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsZGNydWpkYnJrcGtobnZwYmZ4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzE3MDI4NiwiZXhwIjoyMDk4NzQ2Mjg2fQ._1fBBftNMG38F-MESOS7SgmEn1DgLYGR5WEvoBcQggc';
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 let supabaseClient: any = null;
 let useSupabase = false;
@@ -249,7 +251,7 @@ async function saveAllAccessRequestsToSupabase(requests: AccessRequest[]) {
 // USER USAGES ENGINE (REAL-TIME METRICS)
 // ==========================================
 
-const USER_USAGES_FILE = path.join(process.cwd(), 'user_usages_local.json');
+const USER_USAGES_FILE = path.join(DATA_DIR, 'user_usages_local.json');
 
 interface LocalUsageRecord {
   id: string;
@@ -589,7 +591,7 @@ function decryptApiKey(text: string): string {
   }
 }
 
-const AUDIT_LOGS_FILE = path.join(process.cwd(), 'audit_logs.json');
+const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit_logs.json');
 
 interface AuditLog {
   id: string;
@@ -648,7 +650,7 @@ async function addAuditLog(adminEmail: string, action: string, details: string) 
   }
 }
 
-const UPSTREAM_CONFIGS_FILE = path.join(process.cwd(), 'upstream_configs.json');
+const UPSTREAM_CONFIGS_FILE = path.join(DATA_DIR, 'upstream_configs.json');
 
 interface UpstreamConfig {
   id: string;
@@ -4246,7 +4248,7 @@ app.get('/api/admin/registered-users', (req, res) => {
 // USER-SPECIFIC CHAT HISTORY PERSISTENCE
 // ==========================================
 
-const USER_CHAT_HISTORY_FILE = path.join(process.cwd(), 'user_chat_history.json');
+const USER_CHAT_HISTORY_FILE = path.join(DATA_DIR, 'user_chat_history.json');
 
 interface UserChatHistoryItem {
   id: string;
@@ -5693,7 +5695,11 @@ function cleanAndParseJSON(text: string): any {
 
 
 // Vite Dev & Production setup
+let serverInitialized = false;
 async function startServer() {
+  if (serverInitialized) return;
+  serverInitialized = true;
+
   // Sync Supabase data on startup if client initialized successfully
   if (useSupabase) {
     console.log('[Supabase] Initializing startup data synchronization...');
@@ -5706,8 +5712,8 @@ async function startServer() {
     } catch (err) {
       console.error('[Supabase] Failed during startup synchronization:', err);
     }
-  } else {
-    // Local mode sync / seed check
+  } else if (!process.env.VERCEL) {
+    // Local mode sync / seed check (skip on Vercel - no writable cwd)
     try {
       await syncUpstreamConfigsFromSupabase();
     } catch (err) {
@@ -5737,6 +5743,7 @@ async function startServer() {
   }
 }
 
-startServer();
+// On Vercel, init lazily; locally, init immediately
+startServer().catch(err => console.error('[StartServer] Init error:', err));
 
 export default app;
