@@ -1,0 +1,62 @@
+[
+  {
+    "id": "req-1783173819035-h4pb2fki8",
+    "name": "satyam",
+    "email": "satyamkadavla@gmail.com",
+    "status": "approved",
+    "credits": 20,
+    "rpmLimit": 60,
+    "creditsExpiry": "2026-08-03T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-04T14:03:39.035Z",
+    "approvedAt": "2026-07-04T14:04:03.588Z"
+  },
+  {
+    "id": "req-1783174970743-5udqxoocm",
+    "name": "satyam",
+    "email": "satyam@gmail.com",
+    "status": "approved",
+    "credits": 148.4891,
+    "rpmLimit": 60,
+    "creditsExpiry": "2026-08-03T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-04T14:22:50.743Z",
+    "approvedAt": "2026-07-04T14:41:04.973Z"
+  },
+  {
+    "id": "req-1783188129070-gjqxdbq3s",
+    "name": "rahul",
+    "email": "rahul@gmail.com",
+    "status": "pending",
+    "credits": null,
+    "rpmLimit": null,
+    "creditsExpiry": null,
+    "approvedBy": null,
+    "createdAt": "2026-07-04T18:02:09.070Z",
+    "approvedAt": null
+  },
+  {
+    "id": "req-1783238653882-wavd68qpn",
+    "name": "sunil",
+    "email": "sunil@gmail.com",
+    "status": "pending",
+    "credits": null,
+    "rpmLimit": null,
+    "creditsExpiry": null,
+    "approvedBy": null,
+    "createdAt": "2026-07-05T08:04:13.882Z",
+    "approvedAt": null
+  },
+  {
+    "id": "admin-req",
+    "name": "Admin User",
+    "email": "satyamkadavla19@gmail.com",
+    "status": "approved",
+    "credits": 9995.38395,
+    "rpmLimit": 1000,
+    "creditsExpiry": "2027-07-04T14:03:10.950Z",
+    "approvedBy": "system",
+    "createdAt": "2026-07-04T14:03:10.950Z",
+    "approvedAt": "2026-07-04T14:03:10.950Z"
+  }
+]

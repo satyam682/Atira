@@ -1,0 +1,6 @@
+{
+  "name": "NexusAI",
+  "description": "A modern, high-performance AI chat gateway dashboard and portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

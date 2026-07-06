@@ -1,0 +1,16 @@
+[
+  {
+    "id": "cfg-env-fallback",
+    "label": "Default Upstream (Env)",
+    "provider": "cohere",
+    "api_key": "ecba393b79abe5e7b9f72d27b57166e3:117ef81a1f9a700f9ae2552197cdee0aa92a2adccccbad22f57b514da080a9deb318463cfce7a3f22ce37ed00e845bd2",
+    "endpoint_url": "https://api.cohere.com",
+    "model_name": "command-a-03-2025",
+    "rpm_limit": null,
+    "calls_used": 59,
+    "status": "active",
+    "priority": 1,
+    "last_error": null,
+    "created_at": "2026-07-05T07:19:44.685+00:00"
+  }
+]
