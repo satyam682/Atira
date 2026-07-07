@@ -11,6 +11,32 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
+// Supabase global flags declared early for helper function references
+let supabaseClient: any = null;
+let useSupabase = false;
+
+const IS_SERVERLESS = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
+const USE_FS = !IS_SERVERLESS; // local dev: files allowed. Vercel: no file writes.
+
+// Safe filesystem wrapper functions
+function safeWriteFile(filePath: string, data: string) {
+  if (!USE_FS) return;
+  try {
+    fs.writeFileSync(filePath, data, 'utf8');
+  } catch (err: any) {
+    console.warn('FS write skipped (read-only):', err?.message);
+  }
+}
+
+function safeReadFile(filePath: string): string | null {
+  if (!USE_FS) return null;
+  try {
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null;
+  } catch {
+    return null;
+  }
+}
+
 // On Vercel the filesystem is read-only except /tmp
 const DATA_DIR = process.env.VERCEL ? '/tmp' : process.cwd();
 const CREDENTIALS_FILE = path.join(DATA_DIR, 'google_credentials.json');
@@ -22,8 +48,8 @@ interface GoogleCredentials {
 
 function loadGoogleCredentials(): GoogleCredentials {
   try {
-    if (fs.existsSync(CREDENTIALS_FILE)) {
-      const data = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
+    const data = safeReadFile(CREDENTIALS_FILE);
+    if (data) {
       const parsed = JSON.parse(data);
       if (parsed.clientId && parsed.clientSecret) {
         return parsed;
@@ -42,7 +68,7 @@ function loadGoogleCredentials(): GoogleCredentials {
 
 function saveGoogleCredentials(credentials: GoogleCredentials) {
   try {
-    fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2), 'utf8');
+    safeWriteFile(CREDENTIALS_FILE, JSON.stringify(credentials, null, 2));
     // Save to Supabase asynchronously
     saveGoogleCredentialsToSupabase(credentials);
   } catch (err) {
@@ -83,8 +109,8 @@ function isAdminEmail(email: string): boolean {
 
 function loadAccessRequests(): AccessRequest[] {
   try {
-    if (fs.existsSync(ACCESS_REQUESTS_FILE)) {
-      const data = fs.readFileSync(ACCESS_REQUESTS_FILE, 'utf8');
+    const data = safeReadFile(ACCESS_REQUESTS_FILE);
+    if (data) {
       return JSON.parse(data);
     }
   } catch (err) {
@@ -93,13 +119,15 @@ function loadAccessRequests(): AccessRequest[] {
 
   // Do not seed with demo requests to ensure it is completely dynamic starting from 0
   const defaultRequests: AccessRequest[] = [];
-  saveAccessRequests(defaultRequests);
+  if (USE_FS) {
+    saveAccessRequests(defaultRequests);
+  }
   return defaultRequests;
 }
 
 function saveAccessRequests(requests: AccessRequest[]) {
   try {
-    fs.writeFileSync(ACCESS_REQUESTS_FILE, JSON.stringify(requests, null, 2), 'utf8');
+    safeWriteFile(ACCESS_REQUESTS_FILE, JSON.stringify(requests, null, 2));
     // Save to Supabase asynchronously
     saveAllAccessRequestsToSupabase(requests);
   } catch (err) {
@@ -160,8 +188,8 @@ platformApiKeys.set('nx_live_9z1cx3b1d5_sk_live_v23r984712', {
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-let supabaseClient: any = null;
-let useSupabase = false;
+supabaseClient = null;
+useSupabase = false;
 
 if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_SERVICE_ROLE_KEY !== 'YOUR_SUPABASE_SERVICE_ROLE_KEY') {
   try {
@@ -210,13 +238,49 @@ async function syncAccessRequestsFromSupabase() {
           createdAt: item.created_at,
           approvedAt: item.approved_at
         }));
-        fs.writeFileSync(ACCESS_REQUESTS_FILE, JSON.stringify(mapped, null, 2), 'utf8');
+        safeWriteFile(ACCESS_REQUESTS_FILE, JSON.stringify(mapped, null, 2));
         console.log(`[Supabase] Synced ${mapped.length} access requests to local storage.`);
       }
     }
   } catch (err: any) {
     console.log('[Supabase] Issue syncing access requests:', err.message || err);
   }
+}
+
+function mapRowToAccessRequest(item: any): AccessRequest {
+  return {
+    id: item.id,
+    name: item.name,
+    email: item.email,
+    status: item.status,
+    credits: item.credits,
+    rpmLimit: item.rpm_limit,
+    creditsExpiry: item.credits_expiry,
+    approvedBy: item.approved_by,
+    createdAt: item.created_at,
+    approvedAt: item.approved_at
+  };
+}
+
+async function getAccessRequestByEmail(email: string): Promise<AccessRequest | null> {
+  const emailLower = email.trim().toLowerCase();
+  if (useSupabase && supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .ilike('email', emailLower)
+        .maybeSingle();
+      if (error) {
+        console.error('[Supabase] Failed to fetch access request by email:', error.message);
+      } else if (data) {
+        return mapRowToAccessRequest(data);
+      }
+    } catch (err: any) {
+      console.error('[Supabase] Error in getAccessRequestByEmail:', err.message || err);
+    }
+  }
+  return loadAccessRequests().find(r => r.email.toLowerCase() === emailLower) || null;
 }
 
 async function saveAllAccessRequestsToSupabase(requests: AccessRequest[]) {
@@ -266,8 +330,8 @@ interface LocalUsageRecord {
 
 function loadLocalUsages(): LocalUsageRecord[] {
   try {
-    if (fs.existsSync(USER_USAGES_FILE)) {
-      const data = fs.readFileSync(USER_USAGES_FILE, 'utf8');
+    const data = safeReadFile(USER_USAGES_FILE);
+    if (data) {
       return JSON.parse(data);
     }
   } catch (err) {
@@ -290,7 +354,7 @@ function saveLocalUsageRecord(email: string, requestType: string, tokensInput: n
       created_at: new Date().toISOString()
     };
     usages.push(newRecord);
-    fs.writeFileSync(USER_USAGES_FILE, JSON.stringify(usages, null, 2), 'utf8');
+    safeWriteFile(USER_USAGES_FILE, JSON.stringify(usages, null, 2));
   } catch (err) {
     console.error('Failed to save local usage record:', err);
   }
@@ -315,16 +379,41 @@ async function logUsageAndDeductCredits(email: string, category: string, model: 
   // Input: $0.00005 per token
   // Output: $0.00010 per token
   const creditsUsed = parseFloat(((tokensInput * 0.00005) + (tokensOutput * 0.00010)).toFixed(6));
-  
-  // 1. Deduct from in-memory and local JSON file (which triggers async Supabase sync)
-  const requests = loadAccessRequests();
-  const idx = requests.findIndex(r => r.email.toLowerCase() === emailLower);
-  if (idx !== -1) {
-    if (requests[idx].credits !== null && requests[idx].credits !== undefined) {
-      requests[idx].credits = Math.max(0, parseFloat((requests[idx].credits - creditsUsed).toFixed(6)));
+  let creditsRemaining = 0;
+
+  if (useSupabase && supabaseClient) {
+    try {
+      // 1. Deduct from Supabase access_requests table directly for this single user
+      const { data: userReqRow, error: userError } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .ilike('email', emailLower)
+        .maybeSingle();
+
+      if (!userError && userReqRow) {
+        const currentCredits = userReqRow.credits ?? 0;
+        const newCredits = Math.max(0, parseFloat((currentCredits - creditsUsed).toFixed(6)));
+        creditsRemaining = newCredits;
+
+        await supabaseClient
+          .from('access_requests')
+          .update({ credits: newCredits })
+          .eq('id', userReqRow.id);
+      }
+    } catch (err: any) {
+      console.error('[Supabase] Failed to deduct credits dynamically:', err.message);
     }
-    // saveAccessRequests writes to local file AND syncs to Supabase 'access_requests' table automatically
-    saveAccessRequests(requests);
+  } else {
+    // Local JSON fallback mode
+    const requests = loadAccessRequests();
+    const idx = requests.findIndex(r => r.email.toLowerCase() === emailLower);
+    if (idx !== -1) {
+      if (requests[idx].credits !== null && requests[idx].credits !== undefined) {
+        requests[idx].credits = Math.max(0, parseFloat((requests[idx].credits - creditsUsed).toFixed(6)));
+      }
+      saveAccessRequests(requests);
+      creditsRemaining = requests[idx].credits ?? 0;
+    }
   }
 
   // 2. Insert or update usage row in Supabase 'user_usage' table
@@ -388,9 +477,6 @@ async function logUsageAndDeductCredits(email: string, category: string, model: 
     saveLocalUsageRecord(emailLower, category, tokensInput, tokensOutput, creditsUsed, model);
   }
 
-  const updatedUser = requests.find(r => r.email.toLowerCase() === emailLower);
-  const creditsRemaining = updatedUser ? (updatedUser.credits ?? 0) : 0;
-
   return {
     tokensInput,
     tokensOutput,
@@ -415,13 +501,15 @@ async function syncGoogleCredentialsFromSupabase() {
     
     if (!data || !data.client_id) {
       // Local check
-      if (fs.existsSync(CREDENTIALS_FILE)) {
+      if (USE_FS) {
         try {
-          const fileData = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
-          const localCreds = JSON.parse(fileData);
-          if (localCreds.clientId && localCreds.clientSecret) {
-            console.log('[Supabase] No Google credentials found in Supabase. Seeding with local file...');
-            await saveGoogleCredentialsToSupabase(localCreds);
+          const fileData = safeReadFile(CREDENTIALS_FILE);
+          if (fileData) {
+            const localCreds = JSON.parse(fileData);
+            if (localCreds.clientId && localCreds.clientSecret) {
+              console.log('[Supabase] No Google credentials found in Supabase. Seeding with local file...');
+              await saveGoogleCredentialsToSupabase(localCreds);
+            }
           }
         } catch (err) {
           // Ignore parse errors
@@ -432,7 +520,7 @@ async function syncGoogleCredentialsFromSupabase() {
         clientId: data.client_id,
         clientSecret: data.client_secret
       };
-      fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(creds, null, 2), 'utf8');
+      safeWriteFile(CREDENTIALS_FILE, JSON.stringify(creds, null, 2));
       console.log('[Supabase] Synced Google credentials from Supabase to local storage.');
     }
   } catch (err: any) {
@@ -603,8 +691,8 @@ interface AuditLog {
 
 function loadAuditLogs(): AuditLog[] {
   try {
-    if (fs.existsSync(AUDIT_LOGS_FILE)) {
-      const data = fs.readFileSync(AUDIT_LOGS_FILE, 'utf8');
+    const data = safeReadFile(AUDIT_LOGS_FILE);
+    if (data) {
       return JSON.parse(data);
     }
   } catch (err) {
@@ -615,14 +703,13 @@ function loadAuditLogs(): AuditLog[] {
 
 function saveAuditLogs(logs: AuditLog[]) {
   try {
-    fs.writeFileSync(AUDIT_LOGS_FILE, JSON.stringify(logs, null, 2), 'utf8');
+    safeWriteFile(AUDIT_LOGS_FILE, JSON.stringify(logs, null, 2));
   } catch (err) {
     console.error('Failed to save audit logs:', err);
   }
 }
 
 async function addAuditLog(adminEmail: string, action: string, details: string) {
-  const logs = loadAuditLogs();
   const newLog: AuditLog = {
     id: 'log_' + Math.random().toString(36).substring(2, 11),
     admin_email: adminEmail,
@@ -630,8 +717,6 @@ async function addAuditLog(adminEmail: string, action: string, details: string) 
     details,
     timestamp: new Date().toISOString()
   };
-  logs.unshift(newLog);
-  saveAuditLogs(logs);
 
   if (useSupabase && supabaseClient) {
     try {
@@ -647,6 +732,10 @@ async function addAuditLog(adminEmail: string, action: string, details: string) 
     } catch (err) {
       console.log('[Supabase] Failed to save audit log:', err);
     }
+  } else {
+    const logs = loadAuditLogs();
+    logs.unshift(newLog);
+    saveAuditLogs(logs);
   }
 }
 
@@ -669,8 +758,8 @@ interface UpstreamConfig {
 
 function loadUpstreamConfigsLocal(): UpstreamConfig[] {
   try {
-    if (fs.existsSync(UPSTREAM_CONFIGS_FILE)) {
-      const data = fs.readFileSync(UPSTREAM_CONFIGS_FILE, 'utf8');
+    const data = safeReadFile(UPSTREAM_CONFIGS_FILE);
+    if (data) {
       return JSON.parse(data);
     }
   } catch (err) {
@@ -681,7 +770,7 @@ function loadUpstreamConfigsLocal(): UpstreamConfig[] {
 
 function saveUpstreamConfigsLocal(configs: UpstreamConfig[]) {
   try {
-    fs.writeFileSync(UPSTREAM_CONFIGS_FILE, JSON.stringify(configs, null, 2), 'utf8');
+    safeWriteFile(UPSTREAM_CONFIGS_FILE, JSON.stringify(configs, null, 2));
   } catch (err) {
     console.error('Failed to save upstream configs locally:', err);
   }
@@ -690,7 +779,7 @@ function saveUpstreamConfigsLocal(configs: UpstreamConfig[]) {
 async function syncUpstreamConfigsFromSupabase() {
   if (!useSupabase || !supabaseClient) {
     const local = loadUpstreamConfigsLocal();
-    if (local.length === 0) {
+    if (local.length === 0 && USE_FS) {
       const initialConfig = createDefaultUpstreamConfig();
       saveUpstreamConfigsLocal([initialConfig]);
     }
@@ -1513,26 +1602,36 @@ async function driveTool(accessToken: string, action: string) {
 
 // Get user configured Google Cloud Platform Credentials
 app.get('/api/auth/google/credentials', (req, res) => {
-  const creds = loadGoogleCredentials();
-  const maskedSecret = creds.clientSecret.length > 8
-    ? creds.clientSecret.substring(0, 8) + '••••••••••••' + creds.clientSecret.substring(creds.clientSecret.length - 4)
-    : '••••••••••••';
-  res.json({
-    clientId: creds.clientId,
-    clientSecret: maskedSecret,
-    isCustom: fs.existsSync(CREDENTIALS_FILE)
-  });
+  try {
+    const creds = loadGoogleCredentials();
+    const maskedSecret = creds.clientSecret.length > 8
+      ? creds.clientSecret.substring(0, 8) + '••••••••••••' + creds.clientSecret.substring(creds.clientSecret.length - 4)
+      : '••••••••••••';
+    res.json({
+      clientId: creds.clientId,
+      clientSecret: maskedSecret,
+      isCustom: USE_FS && fs.existsSync(CREDENTIALS_FILE)
+    });
+  } catch (err: any) {
+    console.error('get credentials error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Update user configured Google Cloud Platform Credentials (saved locally to google_credentials.json)
 app.post('/api/auth/google/credentials', (req, res) => {
-  const { clientId, clientSecret } = req.body;
-  if (!clientId || !clientSecret) {
-    return res.status(400).json({ error: 'Both clientId and clientSecret are required.' });
-  }
+  try {
+    const { clientId, clientSecret } = req.body;
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ error: 'Both clientId and clientSecret are required.' });
+    }
 
-  saveGoogleCredentials({ clientId, clientSecret });
-  res.json({ success: true, message: 'Google Cloud Credentials updated successfully!' });
+    saveGoogleCredentials({ clientId, clientSecret });
+    res.json({ success: true, message: 'Google Cloud Credentials updated successfully!' });
+  } catch (err: any) {
+    console.error('save credentials error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Google Custom OAuth Endpoint: Get Auth URL
@@ -1704,106 +1803,126 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
 // Dynamic API Key Generation for NexusAI dashboard
 app.post('/api/keys/generate', (req, res) => {
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name is required' });
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
 
-  // Generate 10 random alphanumeric chars for the xxxxxxxxxx part of 'nx_live_xxxxxxxxxx'
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let randStr = '';
-  for (let i = 0; i < 10; i++) {
-    randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+    // Generate 10 random alphanumeric chars for the xxxxxxxxxx part of 'nx_live_xxxxxxxxxx'
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let randStr = '';
+    for (let i = 0; i < 10; i++) {
+      randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const prefix = `nx_live_${randStr}`;
+    const secret = `sk_live_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`;
+    const fullKey = `${prefix}_sk_live_${secret}`;
+
+    const createdDate = new Date().toISOString().split('T')[0];
+    const newKeyObj = { 
+      name, 
+      created: createdDate, 
+      active: true,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0
+    };
+    platformApiKeys.set(fullKey, newKeyObj);
+    saveApiKeyToSupabase(fullKey, newKeyObj);
+
+    res.json({
+      id: String(platformApiKeys.size),
+      name,
+      prefix,
+      value: `••••••••••••••••••••${secret.substring(secret.length - 4)}`,
+      fullKey,
+      created: createdDate,
+      active: true,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0
+    });
+  } catch (err: any) {
+    console.error('generate key error:', err);
+    res.status(500).json({ error: err.message });
   }
-  const prefix = `nx_live_${randStr}`;
-  const secret = `sk_live_${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`;
-  const fullKey = `${prefix}_${secret}`;
-
-  const createdDate = new Date().toISOString().split('T')[0];
-  const newKeyObj = { 
-    name, 
-    created: createdDate, 
-    active: true,
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0
-  };
-  platformApiKeys.set(fullKey, newKeyObj);
-  saveApiKeyToSupabase(fullKey, newKeyObj);
-
-  res.json({
-    id: String(platformApiKeys.size),
-    name,
-    prefix,
-    value: `••••••••••••••••••••${secret.substring(secret.length - 4)}`,
-    fullKey,
-    created: createdDate,
-    active: true,
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0
-  });
 });
 
 app.get('/api/keys', (req, res) => {
-  const list = Array.from(platformApiKeys.entries()).map(([key, value]) => {
-    const parts = key.split('_');
-    const prefix = parts.slice(0, 3).join('_'); // This gives 'nx_live_xxxxxxxxxx'
-    return {
-      name: value.name,
-      prefix: prefix,
-      value: '••••••••••••••••••••' + key.substring(key.length - 4),
-      created: value.created,
-      active: value.active,
-      fullKey: key,
-      inputTokens: value.inputTokens || 0,
-      outputTokens: value.outputTokens || 0,
-      totalTokens: value.totalTokens || 0
-    };
-  });
-  res.json(list);
+  try {
+    const list = Array.from(platformApiKeys.entries()).map(([key, value]) => {
+      const parts = key.split('_');
+      const prefix = parts.slice(0, 3).join('_'); // This gives 'nx_live_xxxxxxxxxx'
+      return {
+        name: value.name,
+        prefix: prefix,
+        value: '••••••••••••••••••••' + key.substring(key.length - 4),
+        created: value.created,
+        active: value.active,
+        fullKey: key,
+        inputTokens: value.inputTokens || 0,
+        outputTokens: value.outputTokens || 0,
+        totalTokens: value.totalTokens || 0
+      };
+    });
+    res.json(list);
+  } catch (err: any) {
+    console.error('get keys error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/keys/:key', (req, res) => {
-  const targetKey = req.params.key;
-  if (platformApiKeys.has(targetKey)) {
-    platformApiKeys.delete(targetKey);
-    deleteApiKeyFromSupabase(targetKey);
-    res.json({ success: true });
-  } else {
-    // Also check prefix matches
-    let found = false;
-    for (const k of platformApiKeys.keys()) {
-      if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
-        platformApiKeys.delete(k);
-        deleteApiKeyFromSupabase(k);
-        found = true;
-        break;
+  try {
+    const targetKey = req.params.key;
+    if (platformApiKeys.has(targetKey)) {
+      platformApiKeys.delete(targetKey);
+      deleteApiKeyFromSupabase(targetKey);
+      res.json({ success: true });
+    } else {
+      // Also check prefix matches
+      let found = false;
+      for (const k of platformApiKeys.keys()) {
+        if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
+          platformApiKeys.delete(k);
+          deleteApiKeyFromSupabase(k);
+          found = true;
+          break;
+        }
       }
+      res.json({ success: found });
     }
-    res.json({ success: found });
+  } catch (err: any) {
+    console.error('delete key error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 app.patch('/api/keys/:key/toggle', (req, res) => {
-  const targetKey = req.params.key;
-  let keyToToggle = targetKey;
-  if (!platformApiKeys.has(targetKey)) {
-    // Try to find matching key
-    for (const k of platformApiKeys.keys()) {
-      if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
-        keyToToggle = k;
-        break;
+  try {
+    const targetKey = req.params.key;
+    let keyToToggle = targetKey;
+    if (!platformApiKeys.has(targetKey)) {
+      // Try to find matching key
+      for (const k of platformApiKeys.keys()) {
+        if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
+          keyToToggle = k;
+          break;
+        }
       }
     }
-  }
 
-  const existing = platformApiKeys.get(keyToToggle);
-  if (existing) {
-    existing.active = !existing.active;
-    platformApiKeys.set(keyToToggle, existing);
-    saveApiKeyToSupabase(keyToToggle, existing);
-    res.json({ success: true, active: existing.active });
-  } else {
-    res.status(404).json({ error: 'Key not found' });
+    const existing = platformApiKeys.get(keyToToggle);
+    if (existing) {
+      existing.active = !existing.active;
+      platformApiKeys.set(keyToToggle, existing);
+      saveApiKeyToSupabase(keyToToggle, existing);
+      res.json({ success: true, active: existing.active });
+    } else {
+      res.status(404).json({ error: 'Key not found' });
+    }
+  } catch (err: any) {
+    console.error('toggle key error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -3035,34 +3154,34 @@ async function executeTool(name: string, args: any, tokens: { googleToken?: stri
 
 // Core Centralized Chat Endpoint
 app.post('/api/chat', async (req, res) => {
-  const { messages, googleAccessToken, workspaceMode, githubToken, model } = req.body;
+  try {
+    const { messages, googleAccessToken, workspaceMode, githubToken, model } = req.body;
 
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'Messages array is required.' });
-  }
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'Messages array is required.' });
+    }
 
-  // 0. GATE & CREDIT VERIFICATION
-  const userEmail = req.headers['x-user-email'] as string || req.body.email || '';
-  if (userEmail) {
-    const emailLower = userEmail.toLowerCase();
-    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
-    const requests = loadAccessRequests();
-    const userReq = requests.find(r => r.email.toLowerCase() === emailLower);
+    // 0. GATE & CREDIT VERIFICATION
+    const userEmail = req.headers['x-user-email'] as string || req.body.email || '';
+    if (userEmail) {
+      const emailLower = userEmail.toLowerCase().trim();
+      const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
+      const userReq = await getAccessRequestByEmail(emailLower);
 
-    if (emailLower === ADMIN_EMAIL) {
-      // Admin bypasses all blocks
-    } else if (!userReq || userReq.status !== 'approved') {
-      return res.status(403).json({ error: "Access Denied: Your registration request is pending or not found. Please contact the admin." });
-    } else {
-      const now = new Date();
-      if (userReq.creditsExpiry && new Date(userReq.creditsExpiry) < now) {
-        return res.status(403).json({ error: 'credits expired, contact admin.' });
-      }
-      if (userReq.credits !== null && userReq.credits !== undefined && userReq.credits <= 0) {
-        return res.status(403).json({ error: 'credits expired, contact admin.' });
+      if (emailLower === ADMIN_EMAIL) {
+        // Admin bypasses all blocks
+      } else if (!userReq || userReq.status !== 'approved') {
+        return res.status(403).json({ error: "Access Denied: Your registration request is pending or not found. Please contact the admin." });
+      } else {
+        const now = new Date();
+        if (userReq.creditsExpiry && new Date(userReq.creditsExpiry) < now) {
+          return res.status(403).json({ error: 'credits expired, contact admin.' });
+        }
+        if (userReq.credits !== null && userReq.credits !== undefined && userReq.credits <= 0) {
+          return res.status(403).json({ error: 'credits expired, contact admin.' });
+        }
       }
     }
-  }
 
   // Helper to log real-time usage and deduct dynamically computed credits
   const sendResponseAndLogUsage = async (responseText: string) => {
@@ -3283,6 +3402,10 @@ ${toolsDescriptions || 'No tools connected. Ask user to connect them in Settings
     console.error('Agent loop execution error:', error);
     return await sendResponseAndLogUsage(`⚠️ **Agent Integration Error**: ${error.message}`);
   }
+  } catch (outerError: any) {
+    console.error('Core chat route crash:', outerError);
+    res.status(500).json({ error: outerError.message });
+  }
 });
 
 
@@ -3350,28 +3473,146 @@ app.post('/api/gateway/chat', async (req, res) => {
 // ==========================================
 
 // POST /api/access-requests: Submit a registration request
-app.post('/api/access-requests', (req, res) => {
-  const { name, email } = req.body;
-  if (!email || !name) {
-    return res.status(400).json({ error: 'Name and Email are required.' });
+app.post('/api/access-requests', async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Name and Email are required.' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+    const existing = await getAccessRequestByEmail(emailLower);
+
+    // If email is admin, skip approval, trigger direct bypass or OTP login
+    if (isAdminEmail(emailLower)) {
+      let adminReq = existing;
+      if (!adminReq) {
+        adminReq = {
+          id: 'admin-req',
+          name: name,
+          email: emailLower,
+          status: 'approved',
+          credits: 9999.00,
+          rpmLimit: 1000,
+          creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString(),
+          approvedBy: 'system',
+          createdAt: new Date().toISOString(),
+          approvedAt: new Date().toISOString()
+        };
+        if (useSupabase && supabaseClient) {
+          await supabaseClient.from('access_requests').upsert({
+            id: adminReq.id,
+            name: adminReq.name,
+            email: adminReq.email,
+            status: adminReq.status,
+            credits: adminReq.credits,
+            rpm_limit: adminReq.rpmLimit,
+            credits_expiry: adminReq.creditsExpiry,
+            approved_by: adminReq.approvedBy,
+            created_at: adminReq.createdAt,
+            approved_at: adminReq.approvedAt
+          });
+        } else {
+          const requests = loadAccessRequests();
+          requests.push(adminReq);
+          saveAccessRequests(requests);
+        }
+      } else if (adminReq.status !== 'approved') {
+        adminReq.status = 'approved';
+        adminReq.credits = 9999.00;
+        adminReq.rpmLimit = 1000;
+        adminReq.creditsExpiry = new Date(Date.now() + 365 * 24 * 3600000).toISOString();
+        adminReq.approvedAt = new Date().toISOString();
+        if (useSupabase && supabaseClient) {
+          await supabaseClient.from('access_requests').update({
+            status: 'approved',
+            credits: 9999.00,
+            rpm_limit: 1000,
+            credits_expiry: adminReq.creditsExpiry,
+            approved_at: adminReq.approvedAt
+          }).eq('id', adminReq.id);
+        } else {
+          const requests = loadAccessRequests();
+          const idx = requests.findIndex(r => r.id === adminReq!.id);
+          if (idx !== -1) {
+            requests[idx] = adminReq;
+            saveAccessRequests(requests);
+          }
+        }
+      }
+      return res.json({
+        status: 'approved',
+        role: 'admin',
+        triggerOtp: false,
+        bypassOtp: true,
+        user: {
+          name: name,
+          email: emailLower,
+          role: 'admin',
+          credits: 9999.00,
+          rpmLimit: 1000,
+          creditsExpiry: adminReq.creditsExpiry
+        }
+      });
+    }
+
+    if (existing) {
+      return res.json({ status: existing.status });
+    }
+
+    // Create standard access request row with status = 'pending'
+    const newReq: AccessRequest = {
+      id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      email: emailLower,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    if (useSupabase && supabaseClient) {
+      await supabaseClient.from('access_requests').insert({
+        id: newReq.id,
+        name: newReq.name,
+        email: newReq.email,
+        status: newReq.status,
+        created_at: newReq.createdAt
+      });
+    } else {
+      const requests = loadAccessRequests();
+      requests.push(newReq);
+      saveAccessRequests(requests);
+    }
+
+    res.json({ status: 'pending' });
+  } catch (err: any) {
+    console.error('Submit access request error:', err);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: 'Invalid email format.' });
-  }
 
-  const emailLower = email.toLowerCase();
-  const requests = loadAccessRequests();
-  const existing = requests.find(r => r.email.toLowerCase() === emailLower);
+// POST /api/auth/login: Direct login check (no OTP required)
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
 
-  // If email is admin, skip approval, trigger direct bypass or OTP login
-  if (isAdminEmail(emailLower)) {
-    if (!existing) {
-      const adminReq: AccessRequest = {
+    const emailLower = email.toLowerCase().trim();
+    let userReq = await getAccessRequestByEmail(emailLower);
+
+    // Auto-seed admin if requested
+    if (isAdminEmail(emailLower) && !userReq) {
+      userReq = {
         id: 'admin-req',
-        name: name,
+        name: 'Admin User',
         email: emailLower,
         status: 'approved',
         credits: 9999.00,
@@ -3381,237 +3622,213 @@ app.post('/api/access-requests', (req, res) => {
         createdAt: new Date().toISOString(),
         approvedAt: new Date().toISOString()
       };
-      requests.push(adminReq);
-      saveAccessRequests(requests);
-    } else if (existing.status !== 'approved') {
-      existing.status = 'approved';
-      existing.credits = 9999.00;
-      existing.rpmLimit = 1000;
-      existing.creditsExpiry = new Date(Date.now() + 365 * 24 * 3600000).toISOString();
-      existing.approvedAt = new Date().toISOString();
-      saveAccessRequests(requests);
+      
+      if (useSupabase && supabaseClient) {
+        await supabaseClient.from('access_requests').upsert({
+          id: userReq.id,
+          name: userReq.name,
+          email: userReq.email,
+          status: userReq.status,
+          credits: userReq.credits,
+          rpm_limit: userReq.rpmLimit,
+          credits_expiry: userReq.creditsExpiry,
+          approved_by: userReq.approvedBy,
+          created_at: userReq.createdAt,
+          approved_at: userReq.approvedAt
+        });
+      } else {
+        const requests = loadAccessRequests();
+        requests.push(userReq);
+        saveAccessRequests(requests);
+      }
     }
-    return res.json({
-      status: 'approved',
-      role: 'admin',
-      triggerOtp: false,
-      bypassOtp: true,
+
+    if (!userReq) {
+      return res.status(403).json({
+        error: 'No authorization request found. Please submit a registration request first.',
+        status: 'not_found'
+      });
+    }
+
+    if (userReq.status === 'pending') {
+      return res.status(403).json({
+        error: "Your access request is currently pending. You'll be able to sign in once the administrator approves it.",
+        status: 'pending'
+      });
+    }
+
+    if (userReq.status === 'rejected') {
+      return res.status(403).json({
+        error: "Your access request was declined.",
+        status: 'rejected'
+      });
+    }
+
+    // --- ADMIN PASSWORD PROTECTION ---
+    if (isAdminEmail(emailLower)) {
+      if (!password) {
+        return res.status(401).json({
+          error: 'Administrator identity detected. Please provide your security password.',
+          requiresPassword: true
+        });
+      }
+      const correctPassword = emailLower === 'aryansomani9@gmail.com' ? 'Aryan@2007' : 'Satyam@572007';
+      if (password !== correctPassword) {
+        return res.status(401).json({
+          error: 'Incorrect administrator password. Access denied.',
+          requiresPassword: true
+        });
+      }
+    }
+
+    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
+    const isHardcodedAdmin = emailLower === 'satyamkadavla79@gmail.com' || emailLower === 'satyamkadavla19@gmail.com' || emailLower === 'aryansomani9@gmail.com';
+    const role = (isHardcodedAdmin || emailLower === ADMIN_EMAIL) ? 'admin' : 'user';
+
+    res.json({
+      success: true,
       user: {
-        name: name,
-        email: emailLower,
-        role: 'admin',
-        credits: 9999.00,
-        rpmLimit: 1000,
-        creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString()
+        name: userReq.name,
+        email: userReq.email,
+        role: role,
+        credits: userReq.credits ?? 0,
+        rpmLimit: userReq.rpmLimit ?? 0,
+        creditsExpiry: userReq.creditsExpiry || null
       }
     });
+  } catch (err: any) {
+    console.error('login error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  if (existing) {
-    return res.json({ status: existing.status });
-  }
-
-  // Create standard access request row with status = 'pending'
-  const newReq: AccessRequest = {
-    id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name,
-    email: emailLower,
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-  requests.push(newReq);
-  saveAccessRequests(requests);
-
-  res.json({ status: 'pending' });
-});
-
-
-// POST /api/auth/login: Direct login check (no OTP required)
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required.' });
-  }
-
-  const emailLower = email.toLowerCase().trim();
-  const requests = loadAccessRequests();
-  let userReq = requests.find(r => r.email.toLowerCase() === emailLower);
-
-  // Auto-seed admin if requested
-  if (isAdminEmail(emailLower) && !userReq) {
-    userReq = {
-      id: 'admin-req',
-      name: 'Admin User',
-      email: emailLower,
-      status: 'approved',
-      credits: 9999.00,
-      rpmLimit: 1000,
-      creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString(),
-      approvedBy: 'system',
-      createdAt: new Date().toISOString(),
-      approvedAt: new Date().toISOString()
-    };
-    requests.push(userReq);
-    saveAccessRequests(requests);
-  }
-
-  if (!userReq) {
-    return res.status(403).json({
-      error: 'No authorization request found. Please submit a registration request first.',
-      status: 'not_found'
-    });
-  }
-
-  if (userReq.status === 'pending') {
-    return res.status(403).json({
-      error: "Your access request is currently pending. You'll be able to sign in once the administrator approves it.",
-      status: 'pending'
-    });
-  }
-
-  if (userReq.status === 'rejected') {
-    return res.status(403).json({
-      error: "Your access request was declined.",
-      status: 'rejected'
-    });
-  }
-
-  // --- ADMIN PASSWORD PROTECTION ---
-  if (isAdminEmail(emailLower)) {
-    if (!password) {
-      return res.status(401).json({
-        error: 'Administrator identity detected. Please provide your security password.',
-        requiresPassword: true
-      });
-    }
-    const correctPassword = emailLower === 'aryansomani9@gmail.com' ? 'Aryan@2007' : 'Satyam@572007';
-    if (password !== correctPassword) {
-      return res.status(401).json({
-        error: 'Incorrect administrator password. Access denied.',
-        requiresPassword: true
-      });
-    }
-  }
-
-  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
-  const isHardcodedAdmin = emailLower === 'satyamkadavla79@gmail.com' || emailLower === 'satyamkadavla19@gmail.com' || emailLower === 'aryansomani9@gmail.com';
-  const role = (isHardcodedAdmin || emailLower === ADMIN_EMAIL) ? 'admin' : 'user';
-
-  res.json({
-    success: true,
-    user: {
-      name: userReq.name,
-      email: userReq.email,
-      role: role,
-      credits: userReq.credits ?? 0,
-      rpmLimit: userReq.rpmLimit ?? 0,
-      creditsExpiry: userReq.creditsExpiry || null
-    }
-  });
 });
 
 
 // POST /api/auth/otp/request: Request verification OTP
-app.post('/api/auth/otp/request', (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required.' });
-  }
+app.post('/api/auth/otp/request', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
 
-  const emailLower = email.toLowerCase();
-  const requests = loadAccessRequests();
-  let userReq = requests.find(r => r.email.toLowerCase() === emailLower);
+    const emailLower = email.toLowerCase().trim();
+    let userReq = await getAccessRequestByEmail(emailLower);
 
-  // Auto-seed admin if requested
-  if (isAdminEmail(emailLower) && !userReq) {
-    userReq = {
-      id: 'admin-req',
-      name: 'Admin User',
-      email: emailLower,
-      status: 'approved',
-      credits: 9999.00,
-      rpmLimit: 1000,
-      creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString(),
-      approvedBy: 'system',
-      createdAt: new Date().toISOString(),
-      approvedAt: new Date().toISOString()
-    };
-    requests.push(userReq);
-    saveAccessRequests(requests);
-  }
-
-  if (isAdminEmail(emailLower)) {
-    return res.json({
-      success: true,
-      bypassOtp: true,
-      user: {
-        name: userReq?.name || 'Admin User',
+    // Auto-seed admin if requested
+    if (isAdminEmail(emailLower) && !userReq) {
+      userReq = {
+        id: 'admin-req',
+        name: 'Admin User',
         email: emailLower,
-        role: 'admin',
-        credits: userReq?.credits ?? 9999.00,
-        rpmLimit: userReq?.rpmLimit ?? 1000,
-        creditsExpiry: userReq?.creditsExpiry || null
+        status: 'approved',
+        credits: 9999.00,
+        rpmLimit: 1000,
+        creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString(),
+        approvedBy: 'system',
+        createdAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString()
+      };
+      if (useSupabase && supabaseClient) {
+        await supabaseClient.from('access_requests').upsert({
+          id: userReq.id,
+          name: userReq.name,
+          email: userReq.email,
+          status: userReq.status,
+          credits: userReq.credits,
+          rpm_limit: userReq.rpmLimit,
+          credits_expiry: userReq.creditsExpiry,
+          approved_by: userReq.approvedBy,
+          created_at: userReq.createdAt,
+          approved_at: userReq.approvedAt
+        });
+      } else {
+        const requests = loadAccessRequests();
+        requests.push(userReq);
+        saveAccessRequests(requests);
       }
-    });
+    }
+
+    if (isAdminEmail(emailLower)) {
+      return res.json({
+        success: true,
+        bypassOtp: true,
+        user: {
+          name: userReq?.name || 'Admin User',
+          email: emailLower,
+          role: 'admin',
+          credits: userReq?.credits ?? 9999.00,
+          rpmLimit: userReq?.rpmLimit ?? 1000,
+          creditsExpiry: userReq?.creditsExpiry || null
+        }
+      });
+    }
+
+    if (!userReq) {
+      return res.status(403).json({ error: 'No authorization request found. Please submit a registration request first.', status: 'not_found' });
+    }
+
+    if (userReq.status === 'pending') {
+      return res.status(403).json({ error: "Your request has been sent to the admin. You'll get access after approval.", status: 'pending' });
+    }
+
+    if (userReq.status === 'rejected') {
+      return res.status(403).json({ error: "Your request was declined", status: 'rejected' });
+    }
+
+    // Generate 6-digit random code and return it for easy testing in standard sandboxed environment
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    activeOtps.set(emailLower, otpCode);
+    console.log(`[OTP Engine] Generated code for ${emailLower}: ${otpCode}`);
+
+    res.json({ success: true, otp: otpCode, message: 'Verification code generated.' });
+  } catch (err: any) {
+    console.error('OTP request error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  if (!userReq) {
-    return res.status(403).json({ error: 'No authorization request found. Please submit a registration request first.', status: 'not_found' });
-  }
-
-  if (userReq.status === 'pending') {
-    return res.status(403).json({ error: "Your request has been sent to the admin. You'll get access after approval.", status: 'pending' });
-  }
-
-  if (userReq.status === 'rejected') {
-    return res.status(403).json({ error: "Your request was declined", status: 'rejected' });
-  }
-
-  // Generate 6-digit random code and return it for easy testing in standard sandboxed environment
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  activeOtps.set(emailLower, otpCode);
-  console.log(`[OTP Engine] Generated code for ${emailLower}: ${otpCode}`);
-
-  res.json({ success: true, otp: otpCode, message: 'Verification code generated.' });
 });
 
 // POST /api/auth/otp/verify: Confirm and sign in
-app.post('/api/auth/otp/verify', (req, res) => {
-  const { email, otp } = req.body;
-  if (!email || !otp) {
-    return res.status(400).json({ error: 'Email and code are required.' });
-  }
-
-  const emailLower = email.toLowerCase();
-  const storedOtp = activeOtps.get(emailLower);
-
-  if (!storedOtp || storedOtp !== otp.trim()) {
-    return res.status(400).json({ error: 'Invalid verification code.' });
-  }
-
-  activeOtps.delete(emailLower);
-
-  const requests = loadAccessRequests();
-  const userReq = requests.find(r => r.email.toLowerCase() === emailLower);
-
-  if (!userReq || userReq.status !== 'approved') {
-    return res.status(403).json({ error: 'Access Denied: Your email is not approved.' });
-  }
-
-  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
-  const role = emailLower === ADMIN_EMAIL ? 'admin' : 'user';
-
-  res.json({
-    success: true,
-    user: {
-      name: userReq.name,
-      email: userReq.email,
-      role: role,
-      credits: userReq.credits ?? 0,
-      rpmLimit: userReq.rpmLimit ?? 0,
-      creditsExpiry: userReq.creditsExpiry || null
+app.post('/api/auth/otp/verify', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and code are required.' });
     }
-  });
+
+    const emailLower = email.toLowerCase().trim();
+    const storedOtp = activeOtps.get(emailLower);
+
+    if (!storedOtp || storedOtp !== otp.trim()) {
+      return res.status(400).json({ error: 'Invalid verification code.' });
+    }
+
+    activeOtps.delete(emailLower);
+
+    const userReq = await getAccessRequestByEmail(emailLower);
+
+    if (!userReq || userReq.status !== 'approved') {
+      return res.status(403).json({ error: 'Access Denied: Your email is not approved.' });
+    }
+
+    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
+    const isHardcodedAdmin = emailLower === 'satyamkadavla79@gmail.com' || emailLower === 'satyamkadavla19@gmail.com' || emailLower === 'aryansomani9@gmail.com';
+    const role = (isHardcodedAdmin || emailLower === ADMIN_EMAIL) ? 'admin' : 'user';
+
+    res.json({
+      success: true,
+      user: {
+        name: userReq.name,
+        email: userReq.email,
+        role: role,
+        credits: userReq.credits ?? 0,
+        rpmLimit: userReq.rpmLimit ?? 0,
+        creditsExpiry: userReq.creditsExpiry || null
+      }
+    });
+  } catch (err: any) {
+    console.error('OTP verify error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/admin/upstream-configs
@@ -3879,113 +4096,212 @@ app.post('/api/admin/upstream-configs/test', async (req, res) => {
 
 // GET /api/admin/audit-logs
 app.get('/api/admin/audit-logs', async (req, res) => {
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-  if (!email || !isAdminEmail(email)) {
-    return res.status(403).json({ error: 'Access Denied: Admin role required.' });
-  }
+  try {
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+    if (!email || !isAdminEmail(email)) {
+      return res.status(403).json({ error: 'Access Denied: Admin role required.' });
+    }
 
-  if (useSupabase && supabaseClient) {
-    try {
+    if (useSupabase && supabaseClient) {
       const { data, error } = await supabaseClient
         .from('audit_logs')
         .select('*')
         .order('timestamp', { ascending: false });
-      if (!error && data) {
-        return res.json(data);
-      }
-    } catch (err) {
-      console.error('[AuditLogs] Supabase fail, using local:', err);
+      if (error) throw error;
+      return res.json(data || []);
     }
-  }
 
-  const logs = loadAuditLogs();
-  res.json(logs);
+    const logs = loadAuditLogs();
+    res.json(logs);
+  } catch (err: any) {
+    console.error('get audit logs error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/admin/access-requests: List all access requests (Admin Only)
-app.get('/api/admin/access-requests', (req, res) => {
-  const requests = loadAccessRequests();
-  res.json(requests);
+app.get('/api/admin/access-requests', async (req, res) => {
+  try {
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+    if (!email || !isAdminEmail(email)) {
+      return res.status(403).json({ error: 'Access denied: Admin only.' });
+    }
+
+    if (useSupabase && supabaseClient) {
+      const { data, error } = await supabaseClient.from('access_requests').select('*');
+      if (error) throw error;
+      const mapped = (data || []).map(mapRowToAccessRequest);
+      return res.json(mapped);
+    }
+    const requests = loadAccessRequests();
+    res.json(requests);
+  } catch (err: any) {
+    console.error('get access requests error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PATCH /api/access-requests/:id: Approve/Reject requests
-app.patch('/api/access-requests/:id', (req, res) => {
-  const { id } = req.params;
-  const { status, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
+app.patch('/api/access-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
 
-  const requests = loadAccessRequests();
-  const idx = requests.findIndex(r => r.id === id);
+    if (useSupabase && supabaseClient) {
+      const { data: existing, error: fetchErr } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!existing) return res.status(404).json({ error: 'Request not found' });
 
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Request not found' });
-  }
+      let updateData: any = {};
+      if (status === 'approved') {
+        if (credits === undefined || rpmLimit === undefined || !creditsExpiry) {
+          return res.status(400).json({ error: 'Credits, RPM limit, and Expiry are required for approval.' });
+        }
+        updateData = {
+          status: 'approved',
+          credits: parseFloat(credits),
+          rpm_limit: parseInt(rpmLimit),
+          credits_expiry: creditsExpiry,
+          approved_by: approvedBy || 'Admin',
+          approved_at: new Date().toISOString()
+        };
+      } else if (status === 'rejected') {
+        updateData = { status: 'rejected', approved_at: null };
+      } else {
+        updateData = { status };
+      }
 
-  if (status === 'approved') {
-    if (credits === undefined || rpmLimit === undefined || !creditsExpiry) {
-      return res.status(400).json({ error: 'Credits, RPM limit, and Expiry are required for approval.' });
+      const { error: updateErr } = await supabaseClient
+        .from('access_requests')
+        .update(updateData)
+        .eq('id', id);
+      if (updateErr) throw updateErr;
+
+      const updated = { ...existing, ...updateData };
+      return res.json({ success: true, request: mapRowToAccessRequest(updated) });
     }
-    requests[idx].status = 'approved';
-    requests[idx].credits = parseFloat(credits);
-    requests[idx].rpmLimit = parseInt(rpmLimit);
-    requests[idx].creditsExpiry = creditsExpiry;
-    requests[idx].approvedBy = approvedBy || 'Admin';
-    requests[idx].approvedAt = new Date().toISOString();
-  } else if (status === 'rejected') {
-    requests[idx].status = 'rejected';
-    requests[idx].approvedAt = null;
-  } else {
-    requests[idx].status = status;
-  }
 
-  saveAccessRequests(requests);
-  res.json({ success: true, request: requests[idx] });
+    const requests = loadAccessRequests();
+    const idx = requests.findIndex(r => r.id === id);
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    if (status === 'approved') {
+      if (credits === undefined || rpmLimit === undefined || !creditsExpiry) {
+        return res.status(400).json({ error: 'Credits, RPM limit, and Expiry are required for approval.' });
+      }
+      requests[idx].status = 'approved';
+      requests[idx].credits = parseFloat(credits);
+      requests[idx].rpmLimit = parseInt(rpmLimit);
+      requests[idx].creditsExpiry = creditsExpiry;
+      requests[idx].approvedBy = approvedBy || 'Admin';
+      requests[idx].approvedAt = new Date().toISOString();
+    } else if (status === 'rejected') {
+      requests[idx].status = 'rejected';
+      requests[idx].approvedAt = undefined;
+    } else {
+      requests[idx].status = status;
+    }
+
+    saveAccessRequests(requests);
+    res.json({ success: true, request: requests[idx] });
+  } catch (err: any) {
+    console.error('patch access requests error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/admin/add-user: Create an approved user directly
-app.post('/api/admin/add-user', (req, res) => {
-  const { name, email, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
-  if (!name || !email || credits === undefined || rpmLimit === undefined || !creditsExpiry) {
-    return res.status(400).json({ error: 'All fields (Name, Email, Credits, RPM, Expiry) are required.' });
-  }
+app.post('/api/admin/add-user', async (req, res) => {
+  try {
+    const { name, email, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
+    if (!name || !email || credits === undefined || rpmLimit === undefined || !creditsExpiry) {
+      return res.status(400).json({ error: 'All fields (Name, Email, Credits, RPM, Expiry) are required.' });
+    }
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: 'Invalid email format.' });
-  }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
 
-  const emailLower = email.toLowerCase();
-  const requests = loadAccessRequests();
-  const existing = requests.find(r => r.email.toLowerCase() === emailLower);
+    const emailLower = email.toLowerCase().trim();
 
-  if (existing) {
-    existing.status = 'approved';
-    existing.name = name;
-    existing.credits = parseFloat(credits);
-    existing.rpmLimit = parseInt(rpmLimit);
-    existing.creditsExpiry = creditsExpiry;
-    existing.approvedBy = approvedBy || 'Admin';
-    existing.approvedAt = new Date().toISOString();
+    if (useSupabase && supabaseClient) {
+      const { data: existing, error: fetchErr } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .ilike('email', emailLower)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+
+      const upsertData: any = {
+        name,
+        email: emailLower,
+        status: 'approved',
+        credits: parseFloat(credits),
+        rpm_limit: parseInt(rpmLimit),
+        credits_expiry: creditsExpiry,
+        approved_by: approvedBy || 'Admin',
+        approved_at: new Date().toISOString()
+      };
+
+      if (existing) {
+        upsertData.id = existing.id;
+      } else {
+        upsertData.id = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        upsertData.created_at = new Date().toISOString();
+      }
+
+      const { error: upsertErr } = await supabaseClient
+        .from('access_requests')
+        .upsert(upsertData);
+      if (upsertErr) throw upsertErr;
+
+      return res.json({ success: true, request: mapRowToAccessRequest(upsertData) });
+    }
+
+    const requests = loadAccessRequests();
+    const existing = requests.find(r => r.email.toLowerCase() === emailLower);
+
+    if (existing) {
+      existing.status = 'approved';
+      existing.name = name;
+      existing.credits = parseFloat(credits);
+      existing.rpmLimit = parseInt(rpmLimit);
+      existing.creditsExpiry = creditsExpiry;
+      existing.approvedBy = approvedBy || 'Admin';
+      existing.approvedAt = new Date().toISOString();
+      saveAccessRequests(requests);
+      return res.json({ success: true, request: existing });
+    }
+
+    const newApprovedUser: AccessRequest = {
+      id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      email: emailLower,
+      status: 'approved',
+      credits: parseFloat(credits),
+      rpmLimit: parseInt(rpmLimit),
+      creditsExpiry,
+      approvedBy: approvedBy || 'Admin',
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString()
+    };
+
+    requests.push(newApprovedUser);
     saveAccessRequests(requests);
-    return res.json({ success: true, request: existing });
+
+    res.json({ success: true, request: newApprovedUser });
+  } catch (err: any) {
+    console.error('add user error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  const newApprovedUser: AccessRequest = {
-    id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    name,
-    email: emailLower,
-    status: 'approved',
-    credits: parseFloat(credits),
-    rpmLimit: parseInt(rpmLimit),
-    creditsExpiry,
-    approvedBy: approvedBy || 'Admin',
-    createdAt: new Date().toISOString(),
-    approvedAt: new Date().toISOString()
-  };
-
-  requests.push(newApprovedUser);
-  saveAccessRequests(requests);
-
-  res.json({ success: true, request: newApprovedUser });
 });
 
 // GET /api/admin/stats: Real-time aggregated stats
@@ -4086,177 +4402,197 @@ app.get('/api/users/profile', async (req, res) => {
 });
 
 // GET /api/usages: Dynamic, real-time aggregate stats & recent logs for standard user or admin
+// GET /api/usages: Dynamic, real-time aggregate stats & recent logs for standard user or admin
 app.get('/api/usages', async (req, res) => {
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-  let targetEmail = (req.query.targetEmail as string || '').trim().toLowerCase();
+  try {
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+    let targetEmail = (req.query.targetEmail as string || '').trim().toLowerCase();
 
-  if (!email) {
-    return res.status(400).json({ error: 'Authenticated user email is required.' });
-  }
-
-  const requesterIsAdmin = isAdminEmail(email);
-
-  // Non-admins can only see their own usages
-  if (!requesterIsAdmin || !targetEmail) {
-    targetEmail = email;
-  }
-
-  // Retrieve remaining credits
-  const requests = loadAccessRequests();
-  const targetUser = requests.find(r => r.email.toLowerCase() === targetEmail);
-  const creditsRemaining = targetUser ? (targetUser.credits ?? 0) : 0;
-
-  let logs: any[] = [];
-  let fetchedFromSupabase = false;
-
-  let totalRequests = 0;
-  let chatRequests = 0;
-  let codeRequests = 0;
-  let coworkRequests = 0;
-  let totalCreditsUsed = 0;
-  let totalTokensInput = 0;
-  let totalTokensOutput = 0;
-
-  if (useSupabase && supabaseClient) {
-    try {
-      // Fetch aggregated data from user_usage
-      const { data: usageRow, error: usageError } = await supabaseClient
-        .from('user_usage')
-        .select('*')
-        .eq('user_email', targetEmail)
-        .maybeSingle();
-
-      if (!usageError && usageRow) {
-        totalRequests = usageRow.total_requests || 0;
-        chatRequests = usageRow.chat_requests || 0;
-        codeRequests = usageRow.coding_requests || 0;
-        coworkRequests = usageRow.cowork_requests || 0;
-        totalCreditsUsed = parseFloat(usageRow.credits_spent || 0);
-        totalTokensInput = usageRow.input_tokens || 0;
-        totalTokensOutput = usageRow.output_tokens || 0;
-        fetchedFromSupabase = true;
-
-        // Populate a virtual log entry to show on the UI chart / list
-        logs = [{
-          id: usageRow.id || 'agg',
-          user_email: targetEmail,
-          request_type: 'Aggregate Usage',
-          tokens_input: totalTokensInput,
-          tokens_output: totalTokensOutput,
-          credits_used: totalCreditsUsed,
-          model_used: 'all',
-          created_at: usageRow.updated_at || usageRow.created_at || new Date().toISOString()
-        }];
-      }
-    } catch (err: any) {
-      console.warn('[Supabase] Failed to fetch from user_usage table:', err.message);
+    if (!email) {
+      return res.status(400).json({ error: 'Authenticated user email is required.' });
     }
 
-    // Secondary fallback: check if user_usages table exists and is filled
-    if (!fetchedFromSupabase) {
+    const requesterIsAdmin = isAdminEmail(email);
+
+    // Non-admins can only see their own usages
+    if (!requesterIsAdmin || !targetEmail) {
+      targetEmail = email;
+    }
+
+    // Retrieve remaining credits
+    const targetUser = await getAccessRequestByEmail(targetEmail);
+    const creditsRemaining = targetUser ? (targetUser.credits ?? 0) : 0;
+
+    let logs: any[] = [];
+    let fetchedFromSupabase = false;
+
+    let totalRequests = 0;
+    let chatRequests = 0;
+    let codeRequests = 0;
+    let coworkRequests = 0;
+    let totalCreditsUsed = 0;
+    let totalTokensInput = 0;
+    let totalTokensOutput = 0;
+
+    if (useSupabase && supabaseClient) {
       try {
-        const { data, error } = await supabaseClient
-          .from('user_usages')
+        // Fetch aggregated data from user_usage
+        const { data: usageRow, error: usageError } = await supabaseClient
+          .from('user_usage')
           .select('*')
           .eq('user_email', targetEmail)
-          .order('created_at', { ascending: false });
+          .maybeSingle();
 
-        if (!error && data && data.length > 0) {
-          logs = data;
+        if (!usageError && usageRow) {
+          totalRequests = usageRow.total_requests || 0;
+          chatRequests = usageRow.chat_requests || 0;
+          codeRequests = usageRow.coding_requests || 0;
+          coworkRequests = usageRow.cowork_requests || 0;
+          totalCreditsUsed = parseFloat(usageRow.credits_spent || 0);
+          totalTokensInput = usageRow.input_tokens || 0;
+          totalTokensOutput = usageRow.output_tokens || 0;
           fetchedFromSupabase = true;
-          
-          totalRequests = logs.length;
-          chatRequests = 0;
-          codeRequests = 0;
-          coworkRequests = 0;
-          totalCreditsUsed = 0;
-          totalTokensInput = 0;
-          totalTokensOutput = 0;
 
-          logs.forEach(log => {
-            const type = (log.request_type || '').toLowerCase();
-            if (type === 'chat') {
-              chatRequests++;
-            } else if (type === 'code' || type === 'coding') {
-              codeRequests++;
-            } else if (type === 'cowork') {
-              coworkRequests++;
-            } else {
-              chatRequests++;
-            }
-            totalCreditsUsed += parseFloat(log.credits_used || log.credits_spent || 0);
-            totalTokensInput += parseInt(log.tokens_input || log.input_tokens || 0);
-            totalTokensOutput += parseInt(log.tokens_output || log.output_tokens || 0);
-          });
+          // Populate a virtual log entry to show on the UI chart / list
+          logs = [{
+            id: usageRow.id || 'agg',
+            user_email: targetEmail,
+            request_type: 'Aggregate Usage',
+            tokens_input: totalTokensInput,
+            tokens_output: totalTokensOutput,
+            credits_used: totalCreditsUsed,
+            model_used: 'all',
+            created_at: usageRow.updated_at || usageRow.created_at || new Date().toISOString()
+          }];
         }
       } catch (err: any) {
-        console.warn('[Supabase] Failed to fetch fallback user_usages:', err.message);
+        console.warn('[Supabase] Failed to fetch from user_usage table:', err.message);
+      }
+
+      // Secondary fallback: check if user_usages table exists and is filled
+      if (!fetchedFromSupabase) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('user_usages')
+            .select('*')
+            .eq('user_email', targetEmail)
+            .order('created_at', { ascending: false });
+
+          if (!error && data && data.length > 0) {
+            logs = data;
+            fetchedFromSupabase = true;
+            
+            totalRequests = logs.length;
+            chatRequests = 0;
+            codeRequests = 0;
+            coworkRequests = 0;
+            totalCreditsUsed = 0;
+            totalTokensInput = 0;
+            totalTokensOutput = 0;
+
+            logs.forEach(log => {
+              const type = (log.request_type || '').toLowerCase();
+              if (type === 'chat') {
+                chatRequests++;
+              } else if (type === 'code' || type === 'coding') {
+                codeRequests++;
+              } else if (type === 'cowork') {
+                coworkRequests++;
+              } else {
+                chatRequests++;
+              }
+              totalCreditsUsed += parseFloat(log.credits_used || log.credits_spent || 0);
+              totalTokensInput += parseInt(log.tokens_input || log.input_tokens || 0);
+              totalTokensOutput += parseInt(log.tokens_output || log.output_tokens || 0);
+            });
+          }
+        } catch (err: any) {
+          console.warn('[Supabase] Failed to fetch fallback user_usages:', err.message);
+        }
       }
     }
-  }
 
-  // Final fallback to local usage storage
-  if (!fetchedFromSupabase) {
-    const localUsages = loadLocalUsages();
-    const filtered = localUsages
-      .filter(u => u.user_email.toLowerCase() === targetEmail)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // Final fallback to local usage storage
+    if (!fetchedFromSupabase) {
+      const localUsages = loadLocalUsages();
+      const filtered = localUsages
+        .filter(u => u.user_email.toLowerCase() === targetEmail)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    logs = filtered;
-    totalRequests = logs.length;
-    chatRequests = 0;
-    codeRequests = 0;
-    coworkRequests = 0;
-    totalCreditsUsed = 0;
-    totalTokensInput = 0;
-    totalTokensOutput = 0;
+      logs = filtered;
+      totalRequests = logs.length;
+      chatRequests = 0;
+      codeRequests = 0;
+      coworkRequests = 0;
+      totalCreditsUsed = 0;
+      totalTokensInput = 0;
+      totalTokensOutput = 0;
 
-    logs.forEach(log => {
-      const type = (log.request_type || '').toLowerCase();
-      if (type === 'chat') {
-        chatRequests++;
-      } else if (type === 'code' || type === 'coding') {
-        codeRequests++;
-      } else if (type === 'cowork') {
-        coworkRequests++;
-      } else {
-        chatRequests++;
-      }
-      totalCreditsUsed += parseFloat(log.credits_used || 0);
-      totalTokensInput += parseInt(log.tokens_input || 0);
-      totalTokensOutput += parseInt(log.tokens_output || 0);
+      logs.forEach(log => {
+        const type = (log.request_type || '').toLowerCase();
+        if (type === 'chat') {
+          chatRequests++;
+        } else if (type === 'code' || type === 'coding') {
+          codeRequests++;
+        } else if (type === 'cowork') {
+          coworkRequests++;
+        } else {
+          chatRequests++;
+        }
+        totalCreditsUsed += parseFloat(log.credits_used || 0);
+        totalTokensInput += parseInt(log.tokens_input || 0);
+        totalTokensOutput += parseInt(log.tokens_output || 0);
+      });
+    }
+
+    res.json({
+      userEmail: targetEmail,
+      totalRequests,
+      chatRequests,
+      codeRequests,
+      coworkRequests,
+      creditsUsed: parseFloat(totalCreditsUsed.toFixed(6)),
+      creditsRemaining: parseFloat(creditsRemaining.toFixed(6)),
+      tokensInput: totalTokensInput,
+      tokensOutput: totalTokensOutput,
+      logs: logs.slice(0, 50)
     });
+  } catch (err: any) {
+    console.error('get usages error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  res.json({
-    userEmail: targetEmail,
-    totalRequests,
-    chatRequests,
-    codeRequests,
-    coworkRequests,
-    creditsUsed: parseFloat(totalCreditsUsed.toFixed(6)),
-    creditsRemaining: parseFloat(creditsRemaining.toFixed(6)),
-    tokensInput: totalTokensInput,
-    tokensOutput: totalTokensOutput,
-    logs: logs.slice(0, 50)
-  });
 });
 
 // GET /api/admin/registered-users: Return all approved user emails for the admin dropdown
-app.get('/api/admin/registered-users', (req, res) => {
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-  
-  if (!email || !isAdminEmail(email)) {
-    return res.status(403).json({ error: 'Access denied: Admin only.' });
+app.get('/api/admin/registered-users', async (req, res) => {
+  try {
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+    
+    if (!email || !isAdminEmail(email)) {
+      return res.status(403).json({ error: 'Access denied: Admin only.' });
+    }
+
+    if (useSupabase && supabaseClient) {
+      const { data, error } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .eq('status', 'approved');
+      
+      if (error) throw error;
+      return res.json((data || []).map(r => ({ email: r.email, name: r.name })));
+    }
+
+    const requests = loadAccessRequests();
+    const approvedUsers = requests.filter(r => r.status === 'approved').map(r => ({
+      email: r.email,
+      name: r.name
+    }));
+
+    res.json(approvedUsers);
+  } catch (err: any) {
+    console.error('get registered users error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  const requests = loadAccessRequests();
-  const approvedUsers = requests.filter(r => r.status === 'approved').map(r => ({
-    email: r.email,
-    name: r.name
-  }));
-
-  res.json(approvedUsers);
 });
 
 
@@ -4279,8 +4615,8 @@ interface UserChatHistoryItem {
 
 function loadLocalUserHistory(): UserChatHistoryItem[] {
   try {
-    if (fs.existsSync(USER_CHAT_HISTORY_FILE)) {
-      const data = fs.readFileSync(USER_CHAT_HISTORY_FILE, 'utf8');
+    const data = safeReadFile(USER_CHAT_HISTORY_FILE);
+    if (data) {
       return JSON.parse(data);
     }
   } catch (err) {
@@ -4291,7 +4627,7 @@ function loadLocalUserHistory(): UserChatHistoryItem[] {
 
 function saveLocalUserHistory(items: UserChatHistoryItem[]) {
   try {
-    fs.writeFileSync(USER_CHAT_HISTORY_FILE, JSON.stringify(items, null, 2), 'utf8');
+    safeWriteFile(USER_CHAT_HISTORY_FILE, JSON.stringify(items, null, 2));
   } catch (err) {
     console.error('Failed to save local user chat history:', err);
   }
@@ -4316,13 +4652,13 @@ function ensureValidUUID(str: string): string {
 
 // GET /api/history: Retrieve chat history for the logged-in user only
 app.get('/api/history', async (req, res) => {
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-  if (!email) {
-    return res.status(400).json({ error: 'Email parameter or header is required.' });
-  }
+  try {
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ error: 'Email parameter or header is required.' });
+    }
 
-  if (useSupabase && supabaseClient) {
-    try {
+    if (useSupabase && supabaseClient) {
       // Query everything ordered by updated_at (newest first)
       const { data, error } = await supabaseClient
         .from('user_history')
@@ -4330,64 +4666,65 @@ app.get('/api/history', async (req, res) => {
         .eq('user_email', email)
         .order('updated_at', { ascending: false });
 
-      if (!error && data) {
-        const mapped = data.map(item => {
-          const itemMessages = typeof item.messages === 'string' ? JSON.parse(item.messages) : (item.messages || []);
-          const lastMsg = itemMessages[itemMessages.length - 1];
-          const calculatedPreview = lastMsg ? (lastMsg.content || '') : '';
-          const previewText = calculatedPreview.length > 60 ? calculatedPreview.substring(0, 60) + '...' : calculatedPreview;
-          return {
-            id: item.id,
-            title: item.title || 'New Chat',
-            category: item.category || 'chat',
-            messages: itemMessages,
-            preview: previewText || 'Empty chat',
-            timestamp: item.updated_at ? new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-            updatedAt: item.updated_at || new Date().toISOString()
-          };
-        });
-        return res.json(mapped);
-      } else {
-        console.log('[Supabase] Note: user_history table select failed or table missing:', error?.message);
+      if (error) {
+        console.log('[Supabase] Note: user_history table select failed or table missing:', error.message);
+        throw error;
       }
-    } catch (err: any) {
-      console.log('[Supabase] Issue fetching user_history:', err.message || err);
+      
+      const mapped = (data || []).map(item => {
+        const itemMessages = typeof item.messages === 'string' ? JSON.parse(item.messages) : (item.messages || []);
+        const lastMsg = itemMessages[itemMessages.length - 1];
+        const calculatedPreview = lastMsg ? (lastMsg.content || '') : '';
+        const previewText = calculatedPreview.length > 60 ? calculatedPreview.substring(0, 60) + '...' : calculatedPreview;
+        return {
+          id: item.id,
+          title: item.title || 'New Chat',
+          category: item.category || 'chat',
+          messages: itemMessages,
+          preview: previewText || 'Empty chat',
+          timestamp: item.updated_at ? new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          updatedAt: item.updated_at || new Date().toISOString()
+        };
+      });
+      return res.json(mapped);
     }
-  }
 
-  // Local fallback
-  const localItems = loadLocalUserHistory();
-  const userItems = localItems.filter(item => item.user_email === email);
-  const sorted = userItems.sort((a, b) => b.id.localeCompare(a.id));
-  res.json(sorted);
+    // Local fallback
+    const localItems = loadLocalUserHistory();
+    const userItems = localItems.filter(item => item.user_email === email);
+    const sorted = userItems.sort((a, b) => b.id.localeCompare(a.id));
+    res.json(sorted);
+  } catch (err: any) {
+    console.error('get history error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/history: Create or update a user-specific chat history item in Supabase
 app.post('/api/history', async (req, res) => {
-  const { id, title, category, messages, preview, timestamp } = req.body;
-  const email = (req.body.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+  try {
+    const { id, title, category, messages, preview, timestamp } = req.body;
+    const email = (req.body.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
 
-  if (!id || !email || !messages) {
-    return res.status(400).json({ error: 'id, email, and messages are required.' });
-  }
+    if (!id || !email || !messages) {
+      return res.status(400).json({ error: 'id, email, and messages are required.' });
+    }
 
-  // Ensure id is always a valid UUID
-  const validId = ensureValidUUID(id);
+    // Ensure id is always a valid UUID
+    const validId = ensureValidUUID(id);
 
-  const payload: UserChatHistoryItem = {
-    id: validId,
-    user_email: email,
-    title: title || 'New Chat',
-    category: category || 'chat',
-    messages,
-    preview: preview || '',
-    timestamp: timestamp || 'Just now',
-    updated_at: new Date().toISOString()
-  };
+    const payload: UserChatHistoryItem = {
+      id: validId,
+      user_email: email,
+      title: title || 'New Chat',
+      category: category || 'chat',
+      messages,
+      preview: preview || '',
+      timestamp: timestamp || 'Just now',
+      updated_at: new Date().toISOString()
+    };
 
-  if (useSupabase && supabaseClient) {
-    try {
-      // Upsert using the actual database columns only
+    if (useSupabase && supabaseClient) {
       const { error } = await supabaseClient
         .from('user_history')
         .upsert({
@@ -4399,42 +4736,43 @@ app.post('/api/history', async (req, res) => {
           updated_at: payload.updated_at
         });
 
-      if (!error) {
-        console.log(`[Supabase] Upserted chat history item ${payload.id} for ${email}`);
-      } else {
+      if (error) {
         console.log('[Supabase] Issue upserting user_history:', error.message);
+        throw error;
       }
-    } catch (err: any) {
-      console.log('[Supabase] Issue saving user_history to Supabase:', err.message || err);
+      return res.json({ success: true, item: payload });
     }
-  }
 
-  // Sync to local JSON backup as well
-  const localItems = loadLocalUserHistory();
-  const existingIdx = localItems.findIndex(item => item.id === payload.id || item.id === id);
-  if (existingIdx >= 0) {
-    localItems[existingIdx] = payload;
-  } else {
-    localItems.push(payload);
-  }
-  saveLocalUserHistory(localItems);
+    // Sync to local JSON backup as well
+    const localItems = loadLocalUserHistory();
+    const existingIdx = localItems.findIndex(item => item.id === payload.id || item.id === id);
+    if (existingIdx >= 0) {
+      localItems[existingIdx] = payload;
+    } else {
+      localItems.push(payload);
+    }
+    saveLocalUserHistory(localItems);
 
-  res.json({ success: true, item: payload });
+    res.json({ success: true, item: payload });
+  } catch (err: any) {
+    console.error('post history error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/history/:id: Delete user-specific chat history item
 app.delete('/api/history/:id', async (req, res) => {
-  const id = req.params.id;
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
+  try {
+    const id = req.params.id;
+    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
 
-  if (!id) {
-    return res.status(400).json({ error: 'id is required.' });
-  }
+    if (!id) {
+      return res.status(400).json({ error: 'id is required.' });
+    }
 
-  const validId = ensureValidUUID(id);
+    const validId = ensureValidUUID(id);
 
-  if (useSupabase && supabaseClient) {
-    try {
+    if (useSupabase && supabaseClient) {
       const query = supabaseClient
         .from('user_history')
         .delete()
@@ -4445,26 +4783,27 @@ app.delete('/api/history/:id', async (req, res) => {
       }
 
       const { error } = await query;
-      if (!error) {
-        console.log(`[Supabase] Deleted chat history item ${validId}`);
-      } else {
+      if (error) {
         console.error('[Supabase] Error deleting user_history:', error.message);
+        throw error;
       }
-    } catch (err: any) {
-      console.error('[Supabase] Error deleting user_history from Supabase:', err.message || err);
+      return res.json({ success: true });
     }
+
+    // Local sync
+    let localItems = loadLocalUserHistory();
+    localItems = localItems.filter(item => {
+      if (item.id !== id && item.id !== validId) return true;
+      if (email && item.user_email !== email) return true;
+      return false;
+    });
+    saveLocalUserHistory(localItems);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('delete history error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  // Local sync
-  let localItems = loadLocalUserHistory();
-  localItems = localItems.filter(item => {
-    if (item.id !== id && item.id !== validId) return true;
-    if (email && item.user_email !== email) return true;
-    return false;
-  });
-  saveLocalUserHistory(localItems);
-
-  res.json({ success: true });
 });
 
 
