@@ -4201,6 +4201,31 @@ app.patch('/api/access-requests/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/access-requests/:id: Delete user registration/approved request
+app.delete('/api/access-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (useSupabase && supabaseClient) {
+      const { error } = await supabaseClient
+        .from('access_requests')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      return res.json({ success: true });
+    }
+
+    const requests = loadAccessRequests();
+    const filtered = requests.filter(r => r.id !== id);
+    saveAccessRequests(filtered);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('delete access request error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/admin/add-user: Create an approved user directly
 app.post('/api/admin/add-user', async (req, res) => {
   try {

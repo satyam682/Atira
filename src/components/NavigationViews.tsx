@@ -37,6 +37,7 @@ import {
   UserPlus,
   Clock,
   AlertCircle,
+  Pencil,
   X
 } from 'lucide-react';
 import SpikeMark from './SpikeMark';
@@ -1816,6 +1817,16 @@ export function AdminPanelView({ showToast }: ViewProps) {
     return d.toISOString().split('T')[0];
   });
 
+  // Edit whitelisted user Modal state
+  const [editModalReq, setEditModalReq] = useState<any | null>(null);
+  const [editCredits, setEditCredits] = useState('150.00');
+  const [editRpm, setEditRpm] = useState('60');
+  const [editExpiry, setEditExpiry] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
+  });
+
   // Add User manual form state
   const [addUserForm, setAddUserForm] = useState({
     name: '',
@@ -1921,6 +1932,66 @@ export function AdminPanelView({ showToast }: ViewProps) {
       }
     } catch (err) {
       showToast('Error rejecting user request.');
+    }
+  };
+
+  const handleEditClick = (req: any) => {
+    setEditModalReq(req);
+    setEditCredits((req.credits ?? 0).toString());
+    setEditRpm((req.rpmLimit ?? 60).toString());
+    if (req.creditsExpiry) {
+      setEditExpiry(new Date(req.creditsExpiry).toISOString().split('T')[0]);
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + 30);
+      setEditExpiry(d.toISOString().split('T')[0]);
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editModalReq) return;
+    try {
+      const res = await fetch(`/api/access-requests/${editModalReq.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'approved',
+          credits: parseFloat(editCredits),
+          rpmLimit: parseInt(editRpm),
+          creditsExpiry: new Date(editExpiry).toISOString(),
+          approvedBy: 'satyamkadavla79@gmail.com'
+        })
+      });
+
+      if (res.ok) {
+        showToast(`Updated whitelisted user ${editModalReq.name} successfully!`, 'success');
+        setEditModalReq(null);
+        fetchStats();
+        fetchRequests();
+      } else {
+        const err = res.headers.get('content-type')?.includes('application/json') ? await res.json() : { error: 'Internal Server Error' };
+        showToast(`Failed to update: ${err.error || 'Server error'}`);
+      }
+    } catch (err) {
+      showToast('Error sending update request.');
+    }
+  };
+
+  const handleDeleteClick = async (reqId: string, reqName: string) => {
+    try {
+      const res = await fetch(`/api/access-requests/${reqId}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        showToast(`Deleted whitelisted user ${reqName}.`, 'info');
+        fetchStats();
+        fetchRequests();
+      } else {
+        showToast('Failed to delete user.');
+      }
+    } catch (err) {
+      showToast('Error deleting user.');
     }
   };
 
@@ -2256,6 +2327,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                     <th className="p-4">Credit Validity</th>
                     <th className="p-4">Approved By</th>
                     <th className="p-4">Created Date</th>
+                    <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-hairline-soft font-sans">
@@ -2288,6 +2360,22 @@ export function AdminPanelView({ showToast }: ViewProps) {
                         </td>
                         <td className="p-4 text-muted-soft">
                           {new Date(req.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-4 text-right space-x-2">
+                          <button
+                            onClick={() => handleEditClick(req)}
+                            className="p-1.5 text-muted hover:text-primary hover:bg-surface-soft rounded-lg transition-all cursor-pointer inline-flex items-center"
+                            title="Edit User"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(req.id, req.name)}
+                            className="p-1.5 text-muted hover:text-primary hover:bg-surface-soft rounded-lg transition-all cursor-pointer inline-flex items-center"
+                            title="Delete User"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -2843,7 +2931,6 @@ export function AdminPanelView({ showToast }: ViewProps) {
         </div>
       )}
 
-      {/* Approval Details Modal */}
       {approvalModalReq && (
         <div className="fixed inset-0 bg-surface-dark/40 flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-canvas border border-hairline rounded-xl max-w-md w-full p-6 space-y-5 shadow-none animate-in zoom-in-95 duration-200">
@@ -2909,6 +2996,90 @@ export function AdminPanelView({ showToast }: ViewProps) {
               >
                 Approve & Seed Ledger
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Details Modal */}
+      {editModalReq && (
+        <div className="fixed inset-0 bg-surface-dark/40 flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-canvas border border-hairline rounded-xl max-w-md w-full p-6 space-y-5 shadow-none animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <h3 className="font-normal text-ink text-base font-serif tracking-tight">Edit Whitelisted User Permissions</h3>
+                <p className="text-xs text-muted-soft">Modify permissions for <strong className="text-ink">{editModalReq.name}</strong></p>
+              </div>
+              <button
+                onClick={() => setEditModalReq(null)}
+                className="p-1 rounded-lg hover:bg-surface-soft text-muted-soft hover:text-muted transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">Remaining Balance Credits ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={editCredits}
+                  onChange={(e) => setEditCredits(e.target.value)}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">RPM Throttle Limit</label>
+                <input
+                  type="number"
+                  required
+                  value={editRpm}
+                  onChange={(e) => setEditRpm(e.target.value)}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">Credits Validity (Expiry Date)</label>
+                <input
+                  type="date"
+                  required
+                  value={editExpiry}
+                  onChange={(e) => setEditExpiry(e.target.value)}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-hairline-soft flex justify-between items-center gap-3">
+              <button
+                onClick={() => {
+                  if (confirm(`Are you sure you want to permanently delete user ${editModalReq.name}?`)) {
+                    handleDeleteClick(editModalReq.id, editModalReq.name);
+                    setEditModalReq(null);
+                  }
+                }}
+                className="px-3.5 py-1.5 border border-primary hover:bg-primary/5 text-primary rounded-lg text-xs font-semibold transition-colors"
+              >
+                Delete User
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setEditModalReq(null)}
+                  className="px-3.5 py-1.5 border border-hairline text-body rounded-lg text-xs font-medium hover:bg-surface-soft transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitEdit}
+                  className="px-3.5 py-1.5 bg-primary hover:bg-primary-active text-white rounded-lg text-xs font-semibold shadow-none transition-colors cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         </div>

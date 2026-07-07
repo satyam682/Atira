@@ -24,18 +24,6 @@
     "approvedAt": "2026-07-04T14:41:04.973Z"
   },
   {
-    "id": "req-1783188129070-gjqxdbq3s",
-    "name": "rahul",
-    "email": "rahul@gmail.com",
-    "status": "pending",
-    "credits": null,
-    "rpmLimit": null,
-    "creditsExpiry": null,
-    "approvedBy": null,
-    "createdAt": "2026-07-04T18:02:09.070Z",
-    "approvedAt": null
-  },
-  {
     "id": "req-1783238653882-wavd68qpn",
     "name": "sunil",
     "email": "sunil@gmail.com",
@@ -52,23 +40,35 @@
     "name": "Admin User",
     "email": "satyamkadavla19@gmail.com",
     "status": "approved",
-    "credits": 9995.38105,
+    "credits": 9999,
     "rpmLimit": 1000,
-    "creditsExpiry": "2027-07-04T14:03:10.950Z",
+    "creditsExpiry": "2027-07-07T06:41:01.238Z",
     "approvedBy": "system",
-    "createdAt": "2026-07-04T14:03:10.950Z",
-    "approvedAt": "2026-07-04T14:03:10.950Z"
+    "createdAt": "2026-07-07T06:41:01.238Z",
+    "approvedAt": "2026-07-07T06:41:01.238Z"
+  },
+  {
+    "id": "req-1783188129070-gjqxdbq3s",
+    "name": "rahul",
+    "email": "rahul@gmail.com",
+    "status": "approved",
+    "credits": 150,
+    "rpmLimit": 60,
+    "creditsExpiry": "2026-08-06T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-04T18:02:09.070Z",
+    "approvedAt": "2026-07-07T06:43:20.184Z"
   },
   {
     "id": "req-1783403420002-plapxx6fz",
     "name": "sohil",
     "email": "shohil@gmail.com",
-    "status": "pending",
-    "credits": null,
-    "rpmLimit": null,
-    "creditsExpiry": null,
-    "approvedBy": null,
+    "status": "approved",
+    "credits": 150,
+    "rpmLimit": 1000000,
+    "creditsExpiry": "2026-08-06T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
     "createdAt": "2026-07-07T05:50:20.002Z",
-    "approvedAt": null
+    "approvedAt": "2026-07-07T14:36:13.565Z"
   }
 ]
