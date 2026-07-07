@@ -1559,6 +1559,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
     endpoint_url: 'https://api.cohere.com/v2/chat',
     model_name: 'command-r-plus',
     rpm_limit: '',
+    tpm_limit: '',
     status: 'active',
     priority: '1'
   });
@@ -1639,6 +1640,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
           endpoint_url: 'https://api.cohere.com/v2/chat',
           model_name: 'command-r-plus',
           rpm_limit: '',
+          tpm_limit: '',
           status: 'active',
           priority: '1'
         });
@@ -1811,6 +1813,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
   const [approvalModalReq, setApprovalModalReq] = useState<any | null>(null);
   const [modalCredits, setModalCredits] = useState('150.00');
   const [modalRpm, setModalRpm] = useState('60');
+  const [modalTpm, setModalTpm] = useState('50000');
   const [modalExpiry, setModalExpiry] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30); // 30 days default
@@ -1821,6 +1824,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
   const [editModalReq, setEditModalReq] = useState<any | null>(null);
   const [editCredits, setEditCredits] = useState('150.00');
   const [editRpm, setEditRpm] = useState('60');
+  const [editTpm, setEditTpm] = useState('50000');
   const [editExpiry, setEditExpiry] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
@@ -1833,6 +1837,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
     email: '',
     credits: '100.00',
     rpmLimit: '60',
+    tpmLimit: '50000',
     creditsExpiry: (() => {
       const d = new Date();
       d.setDate(d.getDate() + 30);
@@ -1897,6 +1902,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
           status: 'approved',
           credits: parseFloat(modalCredits),
           rpmLimit: parseInt(modalRpm),
+          tpmLimit: parseInt(modalTpm),
           creditsExpiry: new Date(modalExpiry).toISOString(),
           approvedBy: 'satyamkadavla79@gmail.com'
         })
@@ -1939,6 +1945,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
     setEditModalReq(req);
     setEditCredits((req.credits ?? 0).toString());
     setEditRpm((req.rpmLimit ?? 60).toString());
+    setEditTpm((req.tpmLimit ?? 50000).toString());
     if (req.creditsExpiry) {
       setEditExpiry(new Date(req.creditsExpiry).toISOString().split('T')[0]);
     } else {
@@ -1958,6 +1965,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
           status: 'approved',
           credits: parseFloat(editCredits),
           rpmLimit: parseInt(editRpm),
+          tpmLimit: parseInt(editTpm),
           creditsExpiry: new Date(editExpiry).toISOString(),
           approvedBy: 'satyamkadavla79@gmail.com'
         })
@@ -2006,6 +2014,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
           email: addUserForm.email,
           credits: parseFloat(addUserForm.credits),
           rpmLimit: parseInt(addUserForm.rpmLimit),
+          tpmLimit: parseInt(addUserForm.tpmLimit),
           creditsExpiry: new Date(addUserForm.creditsExpiry).toISOString(),
           approvedBy: 'satyamkadavla79@gmail.com'
         })
@@ -2018,6 +2027,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
           email: '',
           credits: '100.00',
           rpmLimit: '60',
+          tpmLimit: '50000',
           creditsExpiry: new Date(Date.now() + 30 * 24 * 3600000).toISOString().split('T')[0]
         });
         setActiveTab('users');
@@ -2323,7 +2333,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                   <tr className="bg-surface-soft text-muted uppercase tracking-wider text-[10px] font-medium border-b border-hairline-soft">
                     <th className="p-4">User</th>
                     <th className="p-4">Remaining Credits</th>
-                    <th className="p-4">RPM Limit</th>
+                    <th className="p-4">RPM / TPM Limits</th>
                     <th className="p-4">Credit Validity</th>
                     <th className="p-4">Approved By</th>
                     <th className="p-4">Created Date</th>
@@ -2342,7 +2352,10 @@ export function AdminPanelView({ showToast }: ViewProps) {
                         <td className="p-4 font-mono font-medium text-primary">
                           ${(req.credits ?? 0).toFixed(4)}
                         </td>
-                        <td className="p-4 font-mono text-body">{req.rpmLimit ?? 60} RPM</td>
+                        <td className="p-4 font-mono text-body">
+                          <div>{req.rpmLimit ?? 60} RPM</div>
+                          <div className="text-[10px] text-muted-soft">{req.tpmLimit ?? 50000} TPM</div>
+                        </td>
                         <td className="p-4">
                           {req.creditsExpiry ? (
                             <span className={`font-mono text-[11px] font-semibold ${isExpired ? 'text-primary' : 'text-body'}`}>
@@ -2423,7 +2436,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-medium text-muted uppercase block">Initial Credits ($)</label>
                 <input
@@ -2437,7 +2450,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted uppercase block">RPM Throttle Limit</label>
+                <label className="text-[10px] font-medium text-muted uppercase block">RPM Throttle</label>
                 <input
                   type="number"
                   required
@@ -2448,7 +2461,18 @@ export function AdminPanelView({ showToast }: ViewProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted uppercase block">Credits Expiration</label>
+                <label className="text-[10px] font-medium text-muted uppercase block">TPM Throttle</label>
+                <input
+                  type="number"
+                  required
+                  value={addUserForm.tpmLimit}
+                  onChange={(e) => setAddUserForm({ ...addUserForm, tpmLimit: e.target.value })}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-muted uppercase block">Expiration</label>
                 <input
                   type="date"
                   required
@@ -2573,6 +2597,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                       endpoint_url: 'https://api.cohere.com/v2/chat',
                       model_name: 'command-r-plus',
                       rpm_limit: '',
+                      tpm_limit: '',
                       status: 'active',
                       priority: '1'
                     })}
@@ -2638,7 +2663,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="text-[10px] font-semibold text-muted uppercase tracking-wider block mb-1">Model ID</label>
                     <input
@@ -2647,18 +2672,29 @@ export function AdminPanelView({ showToast }: ViewProps) {
                       placeholder="command-r-plus"
                       value={formConfig.model_name}
                       onChange={(e) => setFormConfig({ ...formConfig, model_name: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:border-primary transition-colors font-mono"
+                      className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:border-primary transition-colors font-mono"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-semibold text-muted uppercase tracking-wider block mb-1">RPM Limit (Optional)</label>
+                    <label className="text-[10px] font-semibold text-muted uppercase tracking-wider block mb-1">RPM Limit</label>
                     <input
                       type="number"
                       placeholder="No limit"
                       value={formConfig.rpm_limit}
                       onChange={(e) => setFormConfig({ ...formConfig, rpm_limit: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:border-primary transition-colors font-mono"
+                      className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:border-primary transition-colors font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-semibold text-muted uppercase tracking-wider block mb-1">TPM Limit</label>
+                    <input
+                      type="number"
+                      placeholder="No limit"
+                      value={formConfig.tpm_limit}
+                      onChange={(e) => setFormConfig({ ...formConfig, tpm_limit: e.target.value })}
+                      className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:border-primary transition-colors font-mono"
                     />
                   </div>
                 </div>
@@ -2791,7 +2827,9 @@ export function AdminPanelView({ showToast }: ViewProps) {
                               <td className="p-4">
                                 <div className="space-y-0.5 font-mono">
                                   <div>Priority: <strong className="text-ink">{cfg.priority}</strong></div>
-                                  <div className="text-[10px] text-muted-soft">Limit: {cfg.rpm_limit ? `${cfg.rpm_limit} RPM` : 'None'}</div>
+                                  <div className="text-[10px] text-muted">RPM Limit: {cfg.rpm_limit ? `${cfg.rpm_limit} RPM` : 'None'}</div>
+                                  <div className="text-[10px] text-muted">TPM Limit: {cfg.tpm_limit ? `${cfg.tpm_limit} TPM` : 'None'}</div>
+                                  <div className="text-[9px] text-primary-dark">Used: {cfg.calls_used || 0} calls | {cfg.tokens_used || 0} tokens</div>
                                 </div>
                               </td>
                               <td className="p-4">
@@ -2838,6 +2876,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                                       endpoint_url: cfg.endpoint_url,
                                       model_name: cfg.model_name,
                                       rpm_limit: cfg.rpm_limit ? String(cfg.rpm_limit) : '',
+                                      tpm_limit: cfg.tpm_limit ? String(cfg.tpm_limit) : '',
                                       status: cfg.status,
                                       priority: String(cfg.priority)
                                     })}
@@ -2972,6 +3011,17 @@ export function AdminPanelView({ showToast }: ViewProps) {
               </div>
 
               <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">TPM Throttle Limit</label>
+                <input
+                  type="number"
+                  required
+                  value={modalTpm}
+                  onChange={(e) => setModalTpm(e.target.value)}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">Credits Validity (Expiry Date)</label>
                 <input
                   type="date"
@@ -3038,6 +3088,17 @@ export function AdminPanelView({ showToast }: ViewProps) {
                   required
                   value={editRpm}
                   onChange={(e) => setEditRpm(e.target.value)}
+                  className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">TPM Throttle Limit</label>
+                <input
+                  type="number"
+                  required
+                  value={editTpm}
+                  onChange={(e) => setEditTpm(e.target.value)}
                   className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs font-mono font-semibold focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary text-body"
                 />
               </div>

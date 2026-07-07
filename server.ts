@@ -90,6 +90,7 @@ interface AccessRequest {
   status: 'pending' | 'approved' | 'rejected';
   credits?: number; // set at approval
   rpmLimit?: number;     // set at approval
+  tpmLimit?: number;     // set at approval
   creditsExpiry?: string; // validity of credits ISO string
   approvedBy?: string;
   createdAt: string;
@@ -254,6 +255,7 @@ function mapRowToAccessRequest(item: any): AccessRequest {
     status: item.status,
     credits: item.credits,
     rpmLimit: item.rpm_limit,
+    tpmLimit: item.tpm_limit !== undefined ? item.tpm_limit : 50000,
     creditsExpiry: item.credits_expiry,
     approvedBy: item.approved_by,
     createdAt: item.created_at,
@@ -740,6 +742,14 @@ async function addAuditLog(adminEmail: string, action: string, details: string) 
 
 const UPSTREAM_CONFIGS_FILE = path.join(DATA_DIR, 'upstream_configs.json');
 
+interface RequestLog {
+  timestamp: number;
+  tokens: number;
+}
+
+const upstreamRequestLogs = new Map<string, RequestLog[]>();
+const userRequestLogs = new Map<string, RequestLog[]>();
+
 interface UpstreamConfig {
   id: string;
   label: string;
@@ -748,7 +758,9 @@ interface UpstreamConfig {
   endpoint_url: string;
   model_name: string;
   rpm_limit: number | null;
+  tpm_limit: number | null;
   calls_used: number;
+  tokens_used: number;
   status: 'active' | 'standby' | 'exhausted' | 'invalid';
   priority: number;
   last_error: string | null;
@@ -818,7 +830,9 @@ async function syncUpstreamConfigsFromSupabase() {
           endpoint_url: item.endpoint_url,
           model_name: item.model_name,
           rpm_limit: item.rpm_limit,
+          tpm_limit: item.tpm_limit !== undefined ? item.tpm_limit : 1000000,
           calls_used: item.calls_used || 0,
+          tokens_used: item.tokens_used || 0,
           status: item.status as any,
           priority: item.priority || 1,
           last_error: item.last_error,
@@ -845,7 +859,9 @@ async function saveUpstreamConfigToSupabase(config: UpstreamConfig) {
         endpoint_url: config.endpoint_url,
         model_name: config.model_name,
         rpm_limit: config.rpm_limit,
+        tpm_limit: config.tpm_limit,
         calls_used: config.calls_used,
+        tokens_used: config.tokens_used,
         status: config.status,
         priority: config.priority,
         last_error: config.last_error,
@@ -862,10 +878,13 @@ async function saveUpstreamConfigToSupabase(config: UpstreamConfig) {
 async function deleteUpstreamConfigFromSupabase(id: string) {
   if (!useSupabase || !supabaseClient) return;
   try {
-    await supabaseClient
+    const { error } = await supabaseClient
       .from('upstream_configs')
       .delete()
       .eq('id', id);
+    if (error) {
+      console.log('[Supabase] Error deleting upstream config:', error.message);
+    }
   } catch (err: any) {
     console.log('[Supabase] Error deleting upstream config from Supabase:', err.message || err);
   }
@@ -881,7 +900,9 @@ function createDefaultUpstreamConfig(): UpstreamConfig {
     endpoint_url: 'https://api.cohere.com/v2/chat',
     model_name: 'command-r-plus',
     rpm_limit: 1000,
+    tpm_limit: 1000000,
     calls_used: 0,
+    tokens_used: 0,
     status: currentKey === 'MY_COHERE_API_KEY' ? 'standby' : 'active',
     priority: 1,
     last_error: null,
@@ -948,7 +969,9 @@ async function getUpstreamConfigs(): Promise<UpstreamConfig[]> {
           endpoint_url: item.endpoint_url,
           model_name: item.model_name,
           rpm_limit: item.rpm_limit,
+          tpm_limit: item.tpm_limit !== undefined ? item.tpm_limit : 1000000,
           calls_used: item.calls_used || 0,
+          tokens_used: item.tokens_used || 0,
           status: item.status as any,
           priority: item.priority || 1,
           last_error: item.last_error,
@@ -984,6 +1007,73 @@ function invalidateUpstreamConfigsCache() {
   lastCacheTime = 0;
 }
 
+// Check if an upstream config has exceeded its rolling limits
+function isUpstreamRateLimited(config: UpstreamConfig): boolean {
+  if (config.rpm_limit === null && config.tpm_limit === null) return false;
+  
+  const now = Date.now();
+  const logs = upstreamRequestLogs.get(config.id) || [];
+  
+  // Keep only logs from the last 60 seconds
+  const validLogs = logs.filter(l => now - l.timestamp < 60000);
+  upstreamRequestLogs.set(config.id, validLogs);
+
+  if (config.rpm_limit !== null && config.rpm_limit > 0 && validLogs.length >= config.rpm_limit) {
+    console.log(`[Rate Limit] Upstream config "${config.label}" rate limited by RPM: ${validLogs.length} >= ${config.rpm_limit}`);
+    return true;
+  }
+
+  if (config.tpm_limit !== null && config.tpm_limit > 0) {
+    const totalTokens = validLogs.reduce((sum, l) => sum + l.tokens, 0);
+    if (totalTokens >= config.tpm_limit) {
+      console.log(`[Rate Limit] Upstream config "${config.label}" rate limited by TPM: ${totalTokens} >= ${config.tpm_limit}`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Log a request on an upstream config
+function recordUpstreamRequest(configId: string, tokens: number) {
+  const now = Date.now();
+  const logs = upstreamRequestLogs.get(configId) || [];
+  logs.push({ timestamp: now, tokens });
+  const validLogs = logs.filter(l => now - l.timestamp < 60000);
+  upstreamRequestLogs.set(configId, validLogs);
+}
+
+// Check if a user has exceeded their rolling limits
+function isUserRateLimited(userEmail: string, rpmLimit: number | undefined | null, tpmLimit: number | undefined | null, estimatedTokens: number): { limited: boolean; reason?: string } {
+  const finalRpm = (rpmLimit !== undefined && rpmLimit !== null) ? rpmLimit : 1000;
+  const finalTpm = (tpmLimit !== undefined && tpmLimit !== null) ? tpmLimit : 50000;
+
+  const now = Date.now();
+  const logs = userRequestLogs.get(userEmail) || [];
+  const validLogs = logs.filter(l => now - l.timestamp < 60000);
+  userRequestLogs.set(userEmail, validLogs);
+
+  if (validLogs.length >= finalRpm) {
+    return { limited: true, reason: `RPM quota exceeded (${validLogs.length}/${finalRpm} requests/min)` };
+  }
+
+  const currentTpm = validLogs.reduce((sum, l) => sum + l.tokens, 0);
+  if (currentTpm + estimatedTokens > finalTpm) {
+    return { limited: true, reason: `TPM quota exceeded (current: ${currentTpm}, prompt: ${estimatedTokens}, limit: ${finalTpm} tokens/min)` };
+  }
+
+  return { limited: false };
+}
+
+// Log a request for a user
+function recordUserRequest(userEmail: string, tokens: number) {
+  const now = Date.now();
+  const logs = userRequestLogs.get(userEmail) || [];
+  logs.push({ timestamp: now, tokens });
+  const validLogs = logs.filter(l => now - l.timestamp < 60000);
+  userRequestLogs.set(userEmail, validLogs);
+}
+
 function extractTextFromCohereContent(content: any): string {
   if (!content) return "";
   if (typeof content === 'string') return content;
@@ -1000,13 +1090,13 @@ function extractTextFromCohereContent(content: any): string {
   return String(content);
 }
 
-async function callDynamicAPI(messages: any[], requestedModel?: string): Promise<string> {
+async function callDynamicAPI(messages: any[], requestedModel?: string, userEmail?: string): Promise<string> {
   const configs = await getUpstreamConfigs();
   
   const availableConfigs = configs
     .filter(c => {
-      const isExhaustedByLimit = c.rpm_limit !== null && c.rpm_limit > 0 && c.calls_used >= c.rpm_limit;
-      return (c.status === 'active' || c.status === 'standby') && !isExhaustedByLimit;
+      const isExhausted = isUpstreamRateLimited(c);
+      return (c.status === 'active' || c.status === 'standby') && !isExhausted;
     })
     .sort((a, b) => a.priority - b.priority);
 
@@ -1123,13 +1213,26 @@ async function callDynamicAPI(messages: any[], requestedModel?: string): Promise
         }
       }
 
+      const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+      const tokensInput = Math.max(1, Math.ceil(inputChars / 4));
+      const tokensOutput = Math.max(1, Math.ceil((resultText || '').length / 4));
+      const totalTokens = tokensInput + tokensOutput;
+
+      // Track rolling limits
+      recordUpstreamRequest(config.id, totalTokens);
+      if (userEmail) {
+        recordUserRequest(userEmail.toLowerCase().trim(), totalTokens);
+      }
+
       config.calls_used = (config.calls_used || 0) + 1;
+      config.tokens_used = (config.tokens_used || 0) + totalTokens;
       await saveUpstreamConfigToSupabase(config);
       
       const localList = loadUpstreamConfigsLocal();
       const idx = localList.findIndex(c => c.id === config.id);
       if (idx !== -1) {
         localList[idx].calls_used = config.calls_used;
+        localList[idx].tokens_used = config.tokens_used;
         saveUpstreamConfigsLocal(localList);
       }
 
@@ -1174,7 +1277,7 @@ async function callDynamicAPI(messages: any[], requestedModel?: string): Promise
   throw new Error('Service temporarily at capacity. All upstream configurations have been exhausted or returned errors. Please verify credentials in the admin panel.');
 }
 
-async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025') {
+async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025', userEmail?: string) {
   try {
     const lastMsg = messages[messages.length - 1]?.content || '';
     const cleanMsg = lastMsg.trim().toLowerCase();
@@ -1193,7 +1296,7 @@ async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025
       return "I am Aira.Ai by Atira Solutions";
     }
 
-    return await callDynamicAPI(messages, model);
+    return await callDynamicAPI(messages, model, userEmail);
   } catch (err: any) {
     return `❌ **Aira.Ai Gateway API Error**: ${err.message}`;
   }
@@ -3179,6 +3282,14 @@ app.post('/api/chat', async (req, res) => {
         if (userReq.credits !== null && userReq.credits !== undefined && userReq.credits <= 0) {
           return res.status(403).json({ error: 'credits expired, contact admin.' });
         }
+
+        // RPM & TPM Rate Limiting Check
+        const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+        const estimatedPromptTokens = Math.max(1, Math.ceil(inputChars / 4));
+        const rateLimitCheck = isUserRateLimited(emailLower, userReq.rpmLimit, userReq.tpmLimit, estimatedPromptTokens);
+        if (rateLimitCheck.limited) {
+          return res.status(429).json({ error: `Rate Limit Exceeded: ${rateLimitCheck.reason}` });
+        }
       }
     }
 
@@ -3363,7 +3474,7 @@ ${toolsDescriptions || 'No tools connected. Ask user to connect them in Settings
   try {
     while (loopCount < maxLoops) {
       loopCount++;
-      const modelReply = await callCohereAPI(conversationHistory, model);
+      const modelReply = await callCohereAPI(conversationHistory, model, userEmail);
       
       // Check if the reply has a tool call
       const toolCall = extractToolCall(modelReply);
@@ -3857,7 +3968,7 @@ app.post('/api/admin/upstream-configs', async (req, res) => {
     return res.status(403).json({ error: 'Access Denied: Admin role required.' });
   }
 
-  const { id, label, provider, api_key, endpoint_url, model_name, rpm_limit, status, priority } = req.body;
+  const { id, label, provider, api_key, endpoint_url, model_name, rpm_limit, tpm_limit, status, priority } = req.body;
 
   if (!label || !api_key || !endpoint_url || !model_name) {
     return res.status(400).json({ error: 'Label, API key, Endpoint URL, and Model Name are required.' });
@@ -3896,7 +4007,9 @@ app.post('/api/admin/upstream-configs', async (req, res) => {
       endpoint_url,
       model_name,
       rpm_limit: rpm_limit !== undefined && rpm_limit !== '' && rpm_limit !== null ? parseInt(rpm_limit) : null,
+      tpm_limit: tpm_limit !== undefined && tpm_limit !== '' && tpm_limit !== null ? parseInt(tpm_limit) : null,
       calls_used: existingConfig ? existingConfig.calls_used : 0,
+      tokens_used: existingConfig ? (existingConfig.tokens_used || 0) : 0,
       status: status || 'active',
       priority: priority !== undefined ? parseInt(priority) : 1,
       last_error: existingConfig ? existingConfig.last_error : null,
@@ -4129,7 +4242,7 @@ app.get('/api/admin/access-requests', async (req, res) => {
 app.patch('/api/access-requests/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
+    const { status, credits, rpmLimit, tpmLimit, creditsExpiry, approvedBy } = req.body;
 
     if (useSupabase && supabaseClient) {
       const { data: existing, error: fetchErr } = await supabaseClient
@@ -4149,6 +4262,7 @@ app.patch('/api/access-requests/:id', async (req, res) => {
           status: 'approved',
           credits: parseFloat(credits),
           rpm_limit: parseInt(rpmLimit),
+          tpm_limit: tpmLimit !== undefined ? parseInt(tpmLimit) : 50000,
           credits_expiry: creditsExpiry,
           approved_by: approvedBy || 'Admin',
           approved_at: new Date().toISOString()
@@ -4183,6 +4297,7 @@ app.patch('/api/access-requests/:id', async (req, res) => {
       requests[idx].status = 'approved';
       requests[idx].credits = parseFloat(credits);
       requests[idx].rpmLimit = parseInt(rpmLimit);
+      requests[idx].tpmLimit = tpmLimit !== undefined ? parseInt(tpmLimit) : 50000;
       requests[idx].creditsExpiry = creditsExpiry;
       requests[idx].approvedBy = approvedBy || 'Admin';
       requests[idx].approvedAt = new Date().toISOString();
@@ -4229,7 +4344,7 @@ app.delete('/api/access-requests/:id', async (req, res) => {
 // POST /api/admin/add-user: Create an approved user directly
 app.post('/api/admin/add-user', async (req, res) => {
   try {
-    const { name, email, credits, rpmLimit, creditsExpiry, approvedBy } = req.body;
+    const { name, email, credits, rpmLimit, tpmLimit, creditsExpiry, approvedBy } = req.body;
     if (!name || !email || credits === undefined || rpmLimit === undefined || !creditsExpiry) {
       return res.status(400).json({ error: 'All fields (Name, Email, Credits, RPM, Expiry) are required.' });
     }
@@ -4255,6 +4370,7 @@ app.post('/api/admin/add-user', async (req, res) => {
         status: 'approved',
         credits: parseFloat(credits),
         rpm_limit: parseInt(rpmLimit),
+        tpm_limit: tpmLimit !== undefined ? parseInt(tpmLimit) : 50000,
         credits_expiry: creditsExpiry,
         approved_by: approvedBy || 'Admin',
         approved_at: new Date().toISOString()
@@ -4283,6 +4399,7 @@ app.post('/api/admin/add-user', async (req, res) => {
       existing.name = name;
       existing.credits = parseFloat(credits);
       existing.rpmLimit = parseInt(rpmLimit);
+      existing.tpmLimit = tpmLimit !== undefined ? parseInt(tpmLimit) : 50000;
       existing.creditsExpiry = creditsExpiry;
       existing.approvedBy = approvedBy || 'Admin';
       existing.approvedAt = new Date().toISOString();
@@ -4297,6 +4414,7 @@ app.post('/api/admin/add-user', async (req, res) => {
       status: 'approved',
       credits: parseFloat(credits),
       rpmLimit: parseInt(rpmLimit),
+      tpmLimit: tpmLimit !== undefined ? parseInt(tpmLimit) : 50000,
       creditsExpiry,
       approvedBy: approvedBy || 'Admin',
       createdAt: new Date().toISOString(),
@@ -4305,7 +4423,6 @@ app.post('/api/admin/add-user', async (req, res) => {
 
     requests.push(newApprovedUser);
     saveAccessRequests(requests);
-
     res.json({ success: true, request: newApprovedUser });
   } catch (err: any) {
     console.error('add user error:', err);
