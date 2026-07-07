@@ -1091,6 +1091,65 @@ function extractTextFromCohereContent(content: any): string {
 }
 
 async function callDynamicAPI(messages: any[], requestedModel?: string, userEmail?: string): Promise<string> {
+  const isOpus48 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.8') || requestedModel.toLowerCase().includes('opus 4.8'));
+  const isOpus47 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.7') || requestedModel.toLowerCase().includes('opus 4.7'));
+  const shouldBypassToFireworks = isOpus48 || isOpus47;
+
+  if (shouldBypassToFireworks) {
+    try {
+      const endpoint = "https://api.fireworks.ai/inference/v1/chat/completions";
+      const fireworksApiKey = process.env.FIREWORKS_API_KEY || "fw_RSEpHirtyZ7Gu3sqzf3eZB";
+      
+      const openAiMessages = messages.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
+        content: m.content
+      }));
+
+      const modelName = isOpus48 ? "accounts/fireworks/models/glm-5p2" : "accounts/fireworks/models/minimax-m3";
+      const maxTokens = isOpus48 ? 131072 : 64000;
+
+      console.log(`[Claude-Opus Bypass] Routing ${requestedModel} to Fireworks ${modelName}...`);
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${fireworksApiKey}`
+        },
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: maxTokens,
+          top_k: 40,
+          presence_penalty: 0,
+          frequency_penalty: 0,
+          messages: openAiMessages
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Fireworks API error: ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json();
+      const resultText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+
+      const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+      const tokensInput = Math.max(1, Math.ceil(inputChars / 4));
+      const tokensOutput = Math.max(1, Math.ceil((resultText || '').length / 4));
+      const totalTokens = tokensInput + tokensOutput;
+
+      if (userEmail) {
+        recordUserRequest(userEmail.toLowerCase().trim(), totalTokens);
+      }
+
+      return resultText;
+    } catch (err: any) {
+      console.error("[Claude-Opus Bypass] Failed calling Fireworks:", err);
+      throw err;
+    }
+  }
+
   const configs = await getUpstreamConfigs();
   
   const availableConfigs = configs
