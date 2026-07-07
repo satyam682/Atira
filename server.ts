@@ -896,6 +896,22 @@ function invalidateUpstreamConfigsCache() {
   lastCacheTime = 0;
 }
 
+function extractTextFromCohereContent(content: any): string {
+  if (!content) return "";
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((c: any) => {
+      if (!c) return "";
+      if (typeof c === 'string') return c;
+      return c.text || c.content || (typeof c === 'object' ? JSON.stringify(c) : String(c));
+    }).join('\n');
+  }
+  if (typeof content === 'object') {
+    return content.text || content.content || JSON.stringify(content);
+  }
+  return String(content);
+}
+
 async function callDynamicAPI(messages: any[], requestedModel?: string): Promise<string> {
   const configs = await getUpstreamConfigs();
   
@@ -954,7 +970,7 @@ async function callDynamicAPI(messages: any[], requestedModel?: string): Promise
 
         if (response.ok) {
           const data = await response.json();
-          resultText = data.message?.content?.[0]?.text || data.message?.content || JSON.stringify(data);
+          resultText = extractTextFromCohereContent(data.message?.content) || JSON.stringify(data);
         } else {
           const errText = await response.text();
           const isQuota = response.status === 429 || errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('limit');

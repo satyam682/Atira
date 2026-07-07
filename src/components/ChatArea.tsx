@@ -151,6 +151,11 @@ export default function ChatArea({
 
 // Simple layout formatting for messages (handling bold texts, bullets, code blocks)
 function formatMessageContent(content: string, onCopy: (txt: string) => void, isCopied: boolean) {
+  if (typeof content !== 'string') {
+    if (content === null || content === undefined) return '';
+    return String(content);
+  }
+
   // Check if content has markdown backticks
   if (content.includes('```')) {
     const parts = content.split('```');

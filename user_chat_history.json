@@ -324,5 +324,29 @@
     "preview": "Hello! How can I assist you today?",
     "timestamp": "Just now",
     "updated_at": "2026-07-06T18:26:24.594Z"
+  },
+  {
+    "id": "56750080-7164-49ef-8346-c2716749fafa",
+    "user_email": "satyamkadavla19@gmail.com",
+    "title": "hi",
+    "category": "chat",
+    "messages": [
+      {
+        "id": "u-1783399485451",
+        "role": "user",
+        "content": "hi",
+        "timestamp": "10:14 AM"
+      },
+      {
+        "id": "b-1783399488061",
+        "role": "assistant",
+        "content": "Hello! How can I assist you today?",
+        "timestamp": "10:14 AM",
+        "modelUsed": "Claude Opus 4.6"
+      }
+    ],
+    "preview": "Hello! How can I assist you today?",
+    "timestamp": "Just now",
+    "updated_at": "2026-07-07T04:44:48.064Z"
   }
 ]
