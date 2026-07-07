@@ -58,5 +58,17 @@
     "approvedBy": "system",
     "createdAt": "2026-07-04T14:03:10.950Z",
     "approvedAt": "2026-07-04T14:03:10.950Z"
+  },
+  {
+    "id": "req-1783403420002-plapxx6fz",
+    "name": "sohil",
+    "email": "shohil@gmail.com",
+    "status": "pending",
+    "credits": null,
+    "rpmLimit": null,
+    "creditsExpiry": null,
+    "approvedBy": null,
+    "createdAt": "2026-07-07T05:50:20.002Z",
+    "approvedAt": null
   }
 ]
