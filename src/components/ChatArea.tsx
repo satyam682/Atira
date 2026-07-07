@@ -209,6 +209,35 @@ function formatMarkdownInline(text: string) {
   const lines = text.split('\n');
   return lines.map((line, lIdx) => {
     const trimmed = line.trim();
+    
+    // Horizontal divider
+    if (trimmed === '---') {
+      return <hr key={lIdx} className="border-t border-hairline/60 my-4" />;
+    }
+
+    // Headings
+    if (trimmed.startsWith('### ')) {
+      return (
+        <h3 key={lIdx} className="text-base font-semibold text-ink mt-4 mb-2 font-sans">
+          {parseBoldText(trimmed.substring(4))}
+        </h3>
+      );
+    }
+    if (trimmed.startsWith('## ')) {
+      return (
+        <h2 key={lIdx} className="text-lg font-bold text-ink mt-5 mb-2 font-sans">
+          {parseBoldText(trimmed.substring(3))}
+        </h2>
+      );
+    }
+    if (trimmed.startsWith('# ')) {
+      return (
+        <h1 key={lIdx} className="text-xl font-extrabold text-ink mt-6 mb-3 font-sans">
+          {parseBoldText(trimmed.substring(2))}
+        </h1>
+      );
+    }
+
     // Bullet points
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       const cleanLine = trimmed.substring(2);
