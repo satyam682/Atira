@@ -7,7 +7,7 @@
     "endpoint_url": "https://api.cohere.com",
     "model_name": "command-a-03-2025",
     "rpm_limit": null,
-    "calls_used": 61,
+    "calls_used": 62,
     "status": "active",
     "priority": 1,
     "last_error": null,

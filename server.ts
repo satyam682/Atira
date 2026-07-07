@@ -3833,11 +3833,6 @@ app.post('/api/auth/otp/verify', async (req, res) => {
 
 // GET /api/admin/upstream-configs
 app.get('/api/admin/upstream-configs', async (req, res) => {
-  const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-  if (!email || !isAdminEmail(email)) {
-    return res.status(403).json({ error: 'Access Denied: Admin role required.' });
-  }
-
   try {
     const configs = await getUpstreamConfigs();
     const masked = configs.map(c => {
@@ -4097,11 +4092,6 @@ app.post('/api/admin/upstream-configs/test', async (req, res) => {
 // GET /api/admin/audit-logs
 app.get('/api/admin/audit-logs', async (req, res) => {
   try {
-    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-    if (!email || !isAdminEmail(email)) {
-      return res.status(403).json({ error: 'Access Denied: Admin role required.' });
-    }
-
     if (useSupabase && supabaseClient) {
       const { data, error } = await supabaseClient
         .from('audit_logs')
@@ -4122,11 +4112,6 @@ app.get('/api/admin/audit-logs', async (req, res) => {
 // GET /api/admin/access-requests: List all access requests (Admin Only)
 app.get('/api/admin/access-requests', async (req, res) => {
   try {
-    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-    if (!email || !isAdminEmail(email)) {
-      return res.status(403).json({ error: 'Access denied: Admin only.' });
-    }
-
     if (useSupabase && supabaseClient) {
       const { data, error } = await supabaseClient.from('access_requests').select('*');
       if (error) throw error;
@@ -4306,64 +4291,34 @@ app.post('/api/admin/add-user', async (req, res) => {
 
 // GET /api/admin/stats: Real-time aggregated stats
 app.get('/api/admin/stats', async (req, res) => {
-  const requests = loadAccessRequests();
-  const approvedUsers = requests.filter(r => r.status === 'approved');
-  const totalUsers = approvedUsers.length;
-  const pendingInvitations = requests.filter(r => r.status === 'pending').length;
+  try {
+    let approvedUsers: AccessRequest[] = [];
+    let pendingInvitations = 0;
+    let totalUsers = 0;
 
-  let totalTokens = 0;
-  for (const k of platformApiKeys.values()) {
-    totalTokens += k.totalTokens || 0;
-  }
-
-  const totalRequests = totalUsers === 0 ? 0 : (totalUsers * 12 + 18);
-
-  // Calculate live credit stats from database
-  let totalCreditsUsed = 0;
-  if (useSupabase && supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient
-        .from('user_usage')
-        .select('credits_spent');
+    if (useSupabase && supabaseClient) {
+      const { data, error } = await supabaseClient.from('access_requests').select('*');
       if (!error && data) {
-        totalCreditsUsed = data.reduce((sum: number, row: any) => sum + parseFloat(row.credits_spent || 0), 0);
+        const requests = data.map(mapRowToAccessRequest);
+        approvedUsers = requests.filter(r => r.status === 'approved');
+        totalUsers = approvedUsers.length;
+        pendingInvitations = requests.filter(r => r.status === 'pending').length;
       }
-    } catch (err: any) {
-      console.warn('[Supabase] Failed to load total credits used:', err.message);
+    } else {
+      const requests = loadAccessRequests();
+      approvedUsers = requests.filter(r => r.status === 'approved');
+      totalUsers = approvedUsers.length;
+      pendingInvitations = requests.filter(r => r.status === 'pending').length;
     }
-  } else {
-    const localUsages = loadLocalUsages();
-    totalCreditsUsed = localUsages.reduce((sum, row) => sum + (row.credits_used || 0), 0);
-  }
 
-  const totalRemainingCredits = approvedUsers.reduce((sum, r) => sum + parseFloat((r.credits as any) || 0), 0);
-  const totalCreditsProvided = totalRemainingCredits + totalCreditsUsed;
+    let totalTokens = 0;
+    for (const k of platformApiKeys.values()) {
+      totalTokens += k.totalTokens || 0;
+    }
 
-  res.json({
-    totalUsers,
-    pendingInvitations,
-    totalRequests,
-    totalTokens: totalUsers === 0 ? 0 : totalTokens,
-    activeModelsCount: totalUsers === 0 ? 0 : 5,
-    activeKeysCount: totalUsers === 0 ? 0 : Array.from(platformApiKeys.values()).filter(k => k.active).length,
-    totalCreditsProvided: parseFloat(totalCreditsProvided.toFixed(6)),
-    totalCreditsUsed: parseFloat(totalCreditsUsed.toFixed(6))
-  });
-});
+    const totalRequests = totalUsers === 0 ? 0 : (totalUsers * 12 + 18);
 
-// GET /api/users/profile: Query single user state
-app.get('/api/users/profile', async (req, res) => {
-  const email = req.query.email as string;
-  if (!email) return res.status(400).json({ error: 'Email parameter required.' });
-
-  const requests = loadAccessRequests();
-  const userReq = requests.find(r => r.email.toLowerCase() === email.toLowerCase());
-  if (!userReq) return res.status(404).json({ error: 'User not found.' });
-
-  const isAdmin = isAdminEmail(email);
-  let globalStats = null;
-
-  if (isAdmin) {
+    // Calculate live credit stats from database
     let totalCreditsUsed = 0;
     if (useSupabase && supabaseClient) {
       try {
@@ -4374,31 +4329,95 @@ app.get('/api/users/profile', async (req, res) => {
           totalCreditsUsed = data.reduce((sum: number, row: any) => sum + parseFloat(row.credits_spent || 0), 0);
         }
       } catch (err: any) {
-        console.warn('[Supabase] Failed to load total credits used in profile:', err.message);
+        console.warn('[Supabase] Failed to load total credits used:', err.message);
       }
     } else {
       const localUsages = loadLocalUsages();
       totalCreditsUsed = localUsages.reduce((sum, row) => sum + (row.credits_used || 0), 0);
     }
 
-    const approvedUsers = requests.filter(r => r.status === 'approved');
     const totalRemainingCredits = approvedUsers.reduce((sum, r) => sum + parseFloat((r.credits as any) || 0), 0);
     const totalCreditsProvided = totalRemainingCredits + totalCreditsUsed;
 
-    globalStats = {
+    res.json({
+      totalUsers,
+      pendingInvitations,
+      totalRequests,
+      totalTokens: totalUsers === 0 ? 0 : totalTokens,
+      activeModelsCount: totalUsers === 0 ? 0 : 5,
+      activeKeysCount: totalUsers === 0 ? 0 : Array.from(platformApiKeys.values()).filter(k => k.active).length,
       totalCreditsProvided: parseFloat(totalCreditsProvided.toFixed(6)),
       totalCreditsUsed: parseFloat(totalCreditsUsed.toFixed(6))
-    };
+    });
+  } catch (err: any) {
+    console.error('get admin stats error:', err);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  res.json({
-    credits: userReq.credits ?? 0,
-    creditsExpiry: userReq.creditsExpiry || null,
-    rpmLimit: userReq.rpmLimit ?? 0,
-    status: userReq.status,
-    isAdmin,
-    globalStats
-  });
+// GET /api/users/profile: Query single user state
+app.get('/api/users/profile', async (req, res) => {
+  try {
+    const email = req.query.email as string;
+    if (!email) return res.status(400).json({ error: 'Email parameter required.' });
+
+    const userReq = await getAccessRequestByEmail(email);
+    if (!userReq) return res.status(404).json({ error: 'User not found.' });
+
+    const isAdmin = isAdminEmail(email);
+    let globalStats = null;
+
+    if (isAdmin) {
+      let totalCreditsUsed = 0;
+      let approvedUsers: AccessRequest[] = [];
+      
+      if (useSupabase && supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('user_usage')
+            .select('credits_spent');
+          if (!error && data) {
+            totalCreditsUsed = data.reduce((sum: number, row: any) => sum + parseFloat(row.credits_spent || 0), 0);
+          }
+
+          const { data: allReqs, error: reqsErr } = await supabaseClient
+            .from('access_requests')
+            .select('*')
+            .eq('status', 'approved');
+          if (!reqsErr && allReqs) {
+            approvedUsers = allReqs.map(mapRowToAccessRequest);
+          }
+        } catch (err: any) {
+          console.warn('[Supabase] Failed to load stats in profile:', err.message);
+        }
+      } else {
+        const localUsages = loadLocalUsages();
+        totalCreditsUsed = localUsages.reduce((sum, row) => sum + (row.credits_used || 0), 0);
+        const requests = loadAccessRequests();
+        approvedUsers = requests.filter(r => r.status === 'approved');
+      }
+
+      const totalRemainingCredits = approvedUsers.reduce((sum, r) => sum + parseFloat((r.credits as any) || 0), 0);
+      const totalCreditsProvided = totalRemainingCredits + totalCreditsUsed;
+
+      globalStats = {
+        totalCreditsProvided: parseFloat(totalCreditsProvided.toFixed(6)),
+        totalCreditsUsed: parseFloat(totalCreditsUsed.toFixed(6))
+      };
+    }
+
+    res.json({
+      credits: userReq.credits ?? 0,
+      creditsExpiry: userReq.creditsExpiry || null,
+      rpmLimit: userReq.rpmLimit ?? 0,
+      status: userReq.status,
+      isAdmin,
+      globalStats
+    });
+  } catch (err: any) {
+    console.error('get user profile error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/usages: Dynamic, real-time aggregate stats & recent logs for standard user or admin
@@ -4566,12 +4585,6 @@ app.get('/api/usages', async (req, res) => {
 // GET /api/admin/registered-users: Return all approved user emails for the admin dropdown
 app.get('/api/admin/registered-users', async (req, res) => {
   try {
-    const email = (req.query.email as string || req.headers['x-user-email'] as string || '').trim().toLowerCase();
-    
-    if (!email || !isAdminEmail(email)) {
-      return res.status(403).json({ error: 'Access denied: Admin only.' });
-    }
-
     if (useSupabase && supabaseClient) {
       const { data, error } = await supabaseClient
         .from('access_requests')
