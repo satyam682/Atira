@@ -1091,8 +1091,16 @@ function extractTextFromCohereContent(content: any): string {
 }
 
 async function callDynamicAPI(messages: any[], requestedModel?: string, userEmail?: string): Promise<string> {
-  const isOpus48 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.8') || requestedModel.toLowerCase().includes('opus 4.8'));
-  const isOpus47 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.7') || requestedModel.toLowerCase().includes('opus 4.7'));
+  const isOpus48 = requestedModel && (
+    requestedModel.toLowerCase().includes('opus-4.8') || 
+    requestedModel.toLowerCase().includes('opus 4.8') || 
+    requestedModel.toLowerCase().includes('glm-5p2')
+  );
+  const isOpus47 = requestedModel && (
+    requestedModel.toLowerCase().includes('opus-4.7') || 
+    requestedModel.toLowerCase().includes('opus 4.7') || 
+    requestedModel.toLowerCase().includes('minimax-m3')
+  );
   const shouldBypassToFireworks = isOpus48 || isOpus47;
 
   if (shouldBypassToFireworks) {
