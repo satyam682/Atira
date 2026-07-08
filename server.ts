@@ -1148,17 +1148,22 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
 
       return resultText;
     } catch (err: any) {
-      console.error("[Claude-Opus Bypass] Failed calling Fireworks:", err);
-      throw err;
+      console.error("[Claude-Opus Bypass] Failed calling Fireworks, falling back to other configs:", err);
     }
   }
 
   const configs = await getUpstreamConfigs();
   
+  const isOpus46 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.6') || requestedModel.toLowerCase().includes('opus 4.6'));
+  
   const availableConfigs = configs
     .filter(c => {
       const isExhausted = isUpstreamRateLimited(c);
-      return (c.status === 'active' || c.status === 'standby') && !isExhausted;
+      const isActiveOrStandby = (c.status === 'active' || c.status === 'standby') && !isExhausted;
+      if (isOpus46) {
+        return isActiveOrStandby && c.provider === 'cohere';
+      }
+      return isActiveOrStandby;
     })
     .sort((a, b) => a.priority - b.priority);
 
@@ -1344,6 +1349,11 @@ async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025
     const lastMsg = messages[messages.length - 1]?.content || '';
     const cleanMsg = lastMsg.trim().toLowerCase();
     
+    const greetingWords = ['hi', 'hello', 'hey', 'kem cho', 'kem cho?', 'hy', 'hola', 'hi!', 'hello!', 'hey!'];
+    if (greetingWords.includes(cleanMsg)) {
+      return "Hi! How can I help you today?";
+    }
+
     if (
       cleanMsg.includes('who are you') || 
       cleanMsg.includes('who are u') || 

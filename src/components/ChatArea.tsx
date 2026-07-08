@@ -205,77 +205,161 @@ function formatMessageContent(content: string, onCopy: (txt: string) => void, is
 }
 
 // Parse simple markdown-like elements like **bold** or bullet lists
+// Parse simple markdown-like elements like **bold**, bullet lists, and tables
 function formatMarkdownInline(text: string) {
   const lines = text.split('\n');
-  return lines.map((line, lIdx) => {
-    const trimmed = line.trim();
+  const renderedElements: React.ReactNode[] = [];
+  let currentTableLines: string[] = [];
+
+  const flushTable = (key: string | number) => {
+    if (currentTableLines.length === 0) return;
     
-    // Horizontal divider
-    if (trimmed === '---') {
-      return <hr key={lIdx} className="border-t border-hairline/60 my-4" />;
-    }
+    if (currentTableLines.length >= 2) {
+      const headerLine = currentTableLines[0];
+      const hasSeparator = currentTableLines[1] && currentTableLines[1].replace(/[\s\-|:|]/g, '') === '';
+      const rowsLines = hasSeparator ? currentTableLines.slice(2) : currentTableLines.slice(1);
 
-    // Headings
-    if (trimmed.startsWith('### ')) {
-      return (
-        <h3 key={lIdx} className="text-base font-semibold text-ink mt-4 mb-2 font-sans">
-          {parseBoldText(trimmed.substring(4))}
-        </h3>
-      );
-    }
-    if (trimmed.startsWith('## ')) {
-      return (
-        <h2 key={lIdx} className="text-lg font-bold text-ink mt-5 mb-2 font-sans">
-          {parseBoldText(trimmed.substring(3))}
-        </h2>
-      );
-    }
-    if (trimmed.startsWith('# ')) {
-      return (
-        <h1 key={lIdx} className="text-xl font-extrabold text-ink mt-6 mb-3 font-sans">
-          {parseBoldText(trimmed.substring(2))}
-        </h1>
-      );
-    }
+      const parseRow = (line: string) => {
+        const parts = line.split('|');
+        let cells = parts.map(p => p.trim());
+        if (parts.length > 1 && line.trim().startsWith('|')) {
+          cells.shift();
+        }
+        if (parts.length > 1 && line.trim().endsWith('|')) {
+          cells.pop();
+        }
+        return cells;
+      };
 
-    // Bullet points
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      const cleanLine = trimmed.substring(2);
-      return (
-        <div key={lIdx} className="flex items-start gap-2 ml-2 my-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
-          <span className="text-sm text-body">{parseBoldText(cleanLine)}</span>
+      const headers = parseRow(headerLine);
+      const rows = rowsLines.map(parseRow);
+
+      renderedElements.push(
+        <div key={`table-${key}`} className="overflow-x-auto my-4 border border-hairline rounded-xl bg-surface-card shadow-sm">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-surface-soft text-muted uppercase tracking-wider text-[10px] font-semibold border-b border-hairline-soft">
+                {headers.map((h, i) => (
+                  <th key={i} className="p-3 font-semibold text-ink border-r border-hairline-soft last:border-r-0">
+                    {parseBoldText(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline-soft font-sans">
+              {rows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-surface-soft/30 transition-colors">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="p-3 text-body border-r border-hairline-soft last:border-r-0">
+                      {parseBoldText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       );
+    } else {
+      currentTableLines.forEach((line, index) => {
+        renderedElements.push(
+          <p key={`table-fallback-${key}-${index}`} className="text-sm text-body my-1.5 min-h-[1.25rem] leading-relaxed">
+            {parseBoldText(line)}
+          </p>
+        );
+      });
     }
-    // Numbered points
-    if (/^\d+\.\s/.test(trimmed)) {
-      const dotIdx = trimmed.indexOf('.');
-      const num = trimmed.substring(0, dotIdx + 1);
-      const cleanLine = trimmed.substring(dotIdx + 1).trim();
-      return (
-        <div key={lIdx} className="flex items-start gap-2 ml-2 my-1.5">
-          <span className="text-primary font-mono font-medium text-xs mt-0.5 shrink-0">{num}</span>
-          <span className="text-sm text-body">{parseBoldText(cleanLine)}</span>
-        </div>
+    currentTableLines = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 1) {
+      currentTableLines.push(line);
+    } else {
+      if (currentTableLines.length > 0) {
+        flushTable(i);
+      }
+
+      if (trimmed === '---') {
+        renderedElements.push(<hr key={i} className="border-t border-hairline/60 my-4" />);
+        continue;
+      }
+
+      if (trimmed.startsWith('### ')) {
+        renderedElements.push(
+          <h3 key={i} className="text-base font-semibold text-ink mt-4 mb-2 font-sans">
+            {parseBoldText(trimmed.substring(4))}
+          </h3>
+        );
+        continue;
+      }
+      if (trimmed.startsWith('## ')) {
+        renderedElements.push(
+          <h2 key={i} className="text-lg font-bold text-ink mt-5 mb-2 font-sans">
+            {parseBoldText(trimmed.substring(3))}
+          </h2>
+        );
+        continue;
+      }
+      if (trimmed.startsWith('# ')) {
+        renderedElements.push(
+          <h1 key={i} className="text-xl font-extrabold text-ink mt-6 mb-3 font-sans">
+            {parseBoldText(trimmed.substring(2))}
+          </h1>
+        );
+        continue;
+      }
+
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        const cleanLine = trimmed.substring(2);
+        renderedElements.push(
+          <div key={i} className="flex items-start gap-2 ml-2 my-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+            <span className="text-sm text-body">{parseBoldText(cleanLine)}</span>
+          </div>
+        );
+        continue;
+      }
+
+      if (/^\d+\.\s/.test(trimmed)) {
+        const dotIdx = trimmed.indexOf('.');
+        const num = trimmed.substring(0, dotIdx + 1);
+        const cleanLine = trimmed.substring(dotIdx + 1).trim();
+        renderedElements.push(
+          <div key={i} className="flex items-start gap-2 ml-2 my-1.5">
+            <span className="text-primary font-mono font-medium text-xs mt-0.5 shrink-0">{num}</span>
+            <span className="text-sm text-body">{parseBoldText(cleanLine)}</span>
+          </div>
+        );
+        continue;
+      }
+
+      if (trimmed.startsWith('> ')) {
+        const cleanLine = trimmed.substring(2);
+        renderedElements.push(
+          <blockquote key={i} className="border-l-4 border-primary bg-surface-soft px-4 py-2 my-3 rounded-r-md text-sm italic text-body">
+            {parseBoldText(cleanLine)}
+          </blockquote>
+        );
+        continue;
+      }
+
+      renderedElements.push(
+        <p key={i} className="text-sm text-body my-1.5 min-h-[1.25rem] leading-relaxed">
+          {parseBoldText(line)}
+        </p>
       );
     }
-    // Blockquotes
-    if (trimmed.startsWith('> ')) {
-      const cleanLine = trimmed.substring(2);
-      return (
-        <blockquote key={lIdx} className="border-l-4 border-primary bg-surface-soft px-4 py-2 my-3 rounded-r-md text-sm italic text-body">
-          {parseBoldText(cleanLine)}
-        </blockquote>
-      );
-    }
-    // Standard paragraph line
-    return (
-      <p key={lIdx} className="text-sm text-body my-1.5 min-h-[1.25rem] leading-relaxed">
-        {parseBoldText(line)}
-      </p>
-    );
-  });
+  }
+
+  if (currentTableLines.length > 0) {
+    flushTable('end');
+  }
+
+  return renderedElements;
 }
 
 function parseBoldText(text: string) {
