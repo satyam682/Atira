@@ -1098,7 +1098,10 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
   if (shouldBypassToFireworks) {
     try {
       const endpoint = "https://api.fireworks.ai/inference/v1/chat/completions";
-      const fireworksApiKey = process.env.FIREWORKS_API_KEY || "fw_RSEpHirtyZ7Gu3sqzf3eZB";
+      const fireworksApiKey = process.env.FIREWORKS_API_KEY;
+      if (!fireworksApiKey) {
+        throw new Error("FIREWORKS_API_KEY environment variable is not configured. Please set it in your environment or Railway variables.");
+      }
       
       const openAiMessages = messages.map(m => ({
         role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
