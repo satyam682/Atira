@@ -163,6 +163,7 @@ const platformApiKeys = new Map<string, {
   outputTokens: number;
   totalTokens: number;
   userEmail?: string;
+  restrictedModel?: string;
 }>();
 
 // No default keys seeded to ensure users start with 0 keys
@@ -558,7 +559,8 @@ async function syncApiKeysFromSupabase() {
           inputTokens: row.input_tokens || 0,
           outputTokens: row.output_tokens || 0,
           totalTokens: row.total_tokens || 0,
-          userEmail: row.user_email || ''
+          userEmail: row.user_email || '',
+          restrictedModel: row.restricted_model || ''
         });
       }
       console.log(`[Supabase] Synced ${platformApiKeys.size} API keys from Supabase to memory.`);
@@ -583,19 +585,30 @@ async function saveApiKeyToSupabase(key: string, val: any) {
     if (val.userEmail) {
       payload.user_email = val.userEmail;
     }
+    if (val.restrictedModel) {
+      payload.restricted_model = val.restrictedModel;
+    }
 
     const { error } = await supabaseClient
       .from('platform_api_keys')
       .upsert(payload);
 
     if (error) {
-      console.log('[Supabase] Issue upserting API key with email, retrying without email:', error.message);
-      delete payload.user_email;
+      console.log('[Supabase] First attempt failed. Retrying without restricted_model:', error.message);
+      delete payload.restricted_model;
       const { error: retryError } = await supabaseClient
         .from('platform_api_keys')
         .upsert(payload);
+      
       if (retryError) {
-        console.log('[Supabase] Issue upserting API key without email:', retryError.message);
+        console.log('[Supabase] Second attempt failed. Retrying without user_email:', retryError.message);
+        delete payload.user_email;
+        const { error: retryError2 } = await supabaseClient
+          .from('platform_api_keys')
+          .upsert(payload);
+        if (retryError2) {
+          console.log('[Supabase] Final fallback failed:', retryError2.message);
+        }
       }
     }
   } catch (err: any) {
@@ -1964,7 +1977,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
 // Dynamic API Key Generation for NexusAI dashboard
 app.post('/api/keys/generate', (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { name, email, restrictedModel } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
     const userEmail = (email || '').toLowerCase().trim();
@@ -1987,7 +2000,8 @@ app.post('/api/keys/generate', (req, res) => {
       inputTokens: 0,
       outputTokens: 0,
       totalTokens: 0,
-      userEmail: userEmail
+      userEmail: userEmail,
+      restrictedModel: restrictedModel || ''
     };
     platformApiKeys.set(fullKey, newKeyObj);
     saveApiKeyToSupabase(fullKey, newKeyObj);
@@ -2002,7 +2016,8 @@ app.post('/api/keys/generate', (req, res) => {
       active: true,
       inputTokens: 0,
       outputTokens: 0,
-      totalTokens: 0
+      totalTokens: 0,
+      restrictedModel: restrictedModel || ''
     });
   } catch (err: any) {
     console.error('generate key error:', err);
@@ -2030,7 +2045,8 @@ app.get('/api/keys', (req, res) => {
           fullKey: key,
           inputTokens: value.inputTokens || 0,
           outputTokens: value.outputTokens || 0,
-          totalTokens: value.totalTokens || 0
+          totalTokens: value.totalTokens || 0,
+          restrictedModel: value.restrictedModel || ''
         };
       });
     res.json(list);
@@ -3630,6 +3646,15 @@ app.post('/api/gateway/chat', async (req, res) => {
   }
 
   const requestedModel = model || 'command-a-03-2025';
+
+  // Enforce model restriction constraints
+  if (existingKey.restrictedModel && existingKey.restrictedModel !== 'all') {
+    if (requestedModel !== existingKey.restrictedModel) {
+      return res.status(403).json({
+        error: `Forbidden. This API key is restricted to model: ${existingKey.restrictedModel}. You attempted to call: ${requestedModel}.`
+      });
+    }
+  }
 
   try {
     const responseText = await callCohereAPI(messages, requestedModel);

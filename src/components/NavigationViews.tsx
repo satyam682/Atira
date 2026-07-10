@@ -56,6 +56,7 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
   const [keys, setKeys] = useState<any[]>([]);
   const [visibleKeyId, setVisibleKeyId] = useState<string | null>(null);
   const [newKeyName, setNewKeyName] = useState('');
+  const [restrictedModel, setRestrictedModel] = useState('');
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [isLoadingKeys, setIsLoadingKeys] = useState(false);
   const [generatedKeyToDisplay, setGeneratedKeyToDisplay] = useState<string | null>(null);
@@ -106,12 +107,13 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
       const res = await fetch('/api/keys/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName, email: userEmail })
+        body: JSON.stringify({ name: newKeyName, email: userEmail, restrictedModel })
       });
       if (res.ok) {
         const newKey = await res.json();
         setKeys([...keys, newKey]);
         setNewKeyName('');
+        setRestrictedModel('');
         setShowGenerateModal(false);
         setGeneratedKeyToDisplay(newKey.fullKey); // set the generated full key to show success copy-once screen
         setSelectedKeyForPlayground(newKey.fullKey);
@@ -278,6 +280,7 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
                 <th className="p-4">SECRET VALUE</th>
                 <th className="p-4">TOKEN USAGE</th>
                 <th className="p-4">CREATED AT</th>
+                <th className="p-4">RESTRICTED TO</th>
                 <th className="p-4">STATUS</th>
                 <th className="p-4 pr-6 text-right">ACTIONS</th>
               </tr>
@@ -285,14 +288,14 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
             <tbody className="divide-y divide-hairline-soft">
               {isLoadingKeys ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-soft">
+                  <td colSpan={8} className="p-8 text-center text-muted-soft">
                     <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-2 text-primary" />
                     Fetching secure key nodes...
                   </td>
                 </tr>
               ) : keys.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-soft italic">
+                  <td colSpan={8} className="p-8 text-center text-muted-soft italic">
                     No active API keys generated yet. Click "Create Key" to get started.
                   </td>
                 </tr>
@@ -323,6 +326,17 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
                       </div>
                     </td>
                     <td className="p-4 text-muted">{key.created}</td>
+                    <td className="p-4">
+                      {key.restrictedModel ? (
+                        <span className="bg-primary/10 border border-primary/20 text-primary px-2 py-0.5 rounded text-[10px] font-mono font-medium">
+                          {key.restrictedModel}
+                        </span>
+                      ) : (
+                        <span className="bg-surface-soft border border-hairline text-muted-soft px-2 py-0.5 rounded text-[10px] font-mono font-medium">
+                          All Models
+                        </span>
+                      )}
+                    </td>
                     <td className="p-4">
                       <button
                         onClick={() => handleToggleActive(key.fullKey)}
@@ -451,14 +465,32 @@ export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProp
           <form onSubmit={handleCreateKey} className="bg-canvas border border-hairline rounded-xl p-6 max-w-sm w-full space-y-4 shadow-none">
             <h3 className="text-lg font-normal text-ink font-serif tracking-tight">Generate New Key</h3>
             <p className="text-xs text-muted-soft">Provide an identifier for this API key to track cost allocations.</p>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Production Microservice"
-              value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
-              className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary"
-            />
+             <div className="space-y-1">
+               <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">Key Name</label>
+               <input
+                 type="text"
+                 required
+                 placeholder="e.g. Production Microservice"
+                 value={newKeyName}
+                 onChange={(e) => setNewKeyName(e.target.value)}
+                 className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary"
+               />
+             </div>
+             
+             <div className="space-y-1">
+               <label className="text-[10px] font-medium text-muted uppercase tracking-wider block">Restricted Model Access</label>
+               <select
+                 value={restrictedModel}
+                 onChange={(e) => setRestrictedModel(e.target.value)}
+                 className="w-full px-3 py-2 bg-canvas border border-hairline rounded-lg text-xs text-body focus:outline-none focus:ring-[3px] focus:ring-primary/15 focus:border-primary"
+               >
+                 <option value="">All Models (Unrestricted)</option>
+                 <option value="claude-opus-4.8">Claude Opus 4.8 Only</option>
+                 <option value="claude-opus-4.7">Claude Opus 4.7 Only</option>
+                 <option value="claude-opus-4.6">Claude Opus 4.6 Only</option>
+               </select>
+               <p className="text-[10px] text-muted-soft leading-tight">If restricted, clients using this API key can only call the selected model.</p>
+             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -937,8 +969,14 @@ CREATE TABLE IF NOT EXISTS platform_api_keys (
   active BOOLEAN DEFAULT TRUE,
   input_tokens INTEGER DEFAULT 0,
   output_tokens INTEGER DEFAULT 0,
-  total_tokens INTEGER DEFAULT 0
+  total_tokens INTEGER DEFAULT 0,
+  user_email TEXT,
+  restricted_model TEXT
 );
+
+-- Migration for existing databases (Run this if you already have the tables):
+-- ALTER TABLE platform_api_keys ADD COLUMN IF NOT EXISTS user_email TEXT;
+-- ALTER TABLE platform_api_keys ADD COLUMN IF NOT EXISTS restricted_model TEXT;
 
 -- 5. Create user_history table
 CREATE TABLE IF NOT EXISTS user_history (
@@ -952,7 +990,7 @@ CREATE TABLE IF NOT EXISTS user_history (
                 </pre>
                 <button
                   onClick={() => {
-                    const sql = `-- 1. Create access_requests table\nCREATE TABLE IF NOT EXISTS access_requests (\n  id TEXT PRIMARY KEY,\n  name TEXT,\n  email TEXT UNIQUE NOT NULL,\n  status TEXT DEFAULT 'pending',\n  credits NUMERIC DEFAULT 10.00,\n  rpm_limit INTEGER DEFAULT 60,\n  credits_expiry TIMESTAMPTZ,\n  approved_by TEXT,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  approved_at TIMESTAMPTZ\n);\n\n-- 2. Create user_usage table\nCREATE TABLE IF NOT EXISTS public.user_usage (\n    id uuid default gen_random_uuid() primary key,\n    user_email text not null unique,\n    total_requests integer default 0 not null,\n    chat_requests integer default 0 not null,\n    coding_requests integer default 0 not null,\n    cowork_requests integer default 0 not null,\n    credits_spent numeric(12, 6) default 0.000000 not null,\n    input_tokens integer default 0 not null,\n    output_tokens integer default 0 not null,\n    created_at timestamp with time zone default timezone('utc'::text, now()) not null,\n    updated_at timestamp with time zone default timezone('utc'::text, now()) not null\n);\n\nCREATE INDEX IF NOT EXISTS user_usage_user_email_idx on public.user_usage(user_email);\n\n-- 3. Create google_credentials table\nCREATE TABLE IF NOT EXISTS google_credentials (\n  id TEXT PRIMARY KEY,\n  client_id TEXT,\n  client_secret TEXT,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- 4. Create platform_api_keys table\nCREATE TABLE IF NOT EXISTS platform_api_keys (\n  key TEXT PRIMARY KEY,\n  name TEXT,\n  created TEXT,\n  active BOOLEAN DEFAULT TRUE,\n  input_tokens INTEGER DEFAULT 0,\n  output_tokens INTEGER DEFAULT 0,\n  total_tokens INTEGER DEFAULT 0\n);\n\n-- 5. Create user_history table\nCREATE TABLE IF NOT EXISTS user_history (\n  id UUID PRIMARY KEY,\n  user_email TEXT NOT NULL,\n  title TEXT DEFAULT 'New Chat',\n  category TEXT DEFAULT 'chat',\n  messages JSONB DEFAULT '[]'::jsonb,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`;
+                    const sql = `-- 1. Create access_requests table\nCREATE TABLE IF NOT EXISTS access_requests (\n  id TEXT PRIMARY KEY,\n  name TEXT,\n  email TEXT UNIQUE NOT NULL,\n  status TEXT DEFAULT 'pending',\n  credits NUMERIC DEFAULT 10.00,\n  rpm_limit INTEGER DEFAULT 60,\n  credits_expiry TIMESTAMPTZ,\n  approved_by TEXT,\n  created_at TIMESTAMPTZ DEFAULT NOW(),\n  approved_at TIMESTAMPTZ\n);\n\n-- 2. Create user_usage table\nCREATE TABLE IF NOT EXISTS public.user_usage (\n    id uuid default gen_random_uuid() primary key,\n    user_email text not null unique,\n    total_requests integer default 0 not null,\n    chat_requests integer default 0 not null,\n    coding_requests integer default 0 not null,\n    cowork_requests integer default 0 not null,\n    credits_spent numeric(12, 6) default 0.000000 not null,\n    input_tokens integer default 0 not null,\n    output_tokens integer default 0 not null,\n    created_at timestamp with time zone default timezone('utc'::text, now()) not null,\n    updated_at timestamp with time zone default timezone('utc'::text, now()) not null\n);\n\nCREATE INDEX IF NOT EXISTS user_usage_user_email_idx on public.user_usage(user_email);\n\n-- 3. Create google_credentials table\nCREATE TABLE IF NOT EXISTS google_credentials (\n  id TEXT PRIMARY KEY,\n  client_id TEXT,\n  client_secret TEXT,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- 4. Create platform_api_keys table\nCREATE TABLE IF NOT EXISTS platform_api_keys (\n  key TEXT PRIMARY KEY,\n  name TEXT,\n  created TEXT,\n  active BOOLEAN DEFAULT TRUE,\n  input_tokens INTEGER DEFAULT 0,\n  output_tokens INTEGER DEFAULT 0,\n  total_tokens INTEGER DEFAULT 0,\n  user_email TEXT,\n  restricted_model TEXT\n);\n\n-- Migration for existing databases:\n-- ALTER TABLE platform_api_keys ADD COLUMN IF NOT EXISTS user_email TEXT;\n-- ALTER TABLE platform_api_keys ADD COLUMN IF NOT EXISTS restricted_model TEXT;\n\n-- 5. Create user_history table\nCREATE TABLE IF NOT EXISTS user_history (\n  id UUID PRIMARY KEY,\n  user_email TEXT NOT NULL,\n  title TEXT DEFAULT 'New Chat',\n  category TEXT DEFAULT 'chat',\n  messages JSONB DEFAULT '[]'::jsonb,\n  updated_at TIMESTAMPTZ DEFAULT NOW()\n);`;
                     navigator.clipboard.writeText(sql);
                     showToast('Supabase SQL Schema copied to clipboard!', 'success');
                   }}
