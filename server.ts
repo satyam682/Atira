@@ -1368,28 +1368,6 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
 
 async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025', userEmail?: string) {
   try {
-    const lastMsg = messages[messages.length - 1]?.content || '';
-    const cleanMsg = lastMsg.trim().toLowerCase();
-    
-    const greetingWords = ['hi', 'hello', 'hey', 'kem cho', 'kem cho?', 'hy', 'hola', 'hi!', 'hello!', 'hey!'];
-    if (greetingWords.includes(cleanMsg)) {
-      return "Hi! How can I help you today?";
-    }
-
-    if (
-      cleanMsg.includes('who are you') || 
-      cleanMsg.includes('who are u') || 
-      cleanMsg.includes('who r u') || 
-      cleanMsg.includes('your name') || 
-      cleanMsg.includes('kon cho') || 
-      cleanMsg.includes('tame kon') ||
-      cleanMsg.includes('what is this') ||
-      cleanMsg.includes('what are you') ||
-      cleanMsg.includes('identity')
-    ) {
-      return "I am Aira.Ai by Atira Solutions";
-    }
-
     return await callDynamicAPI(messages, model, userEmail);
   } catch (err: any) {
     return `❌ **Aira.Ai Gateway API Error**: ${err.message}`;
