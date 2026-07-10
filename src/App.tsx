@@ -256,8 +256,13 @@ export default function App() {
   useEffect(() => {
     const handleOAuthMessage = (event: MessageEvent) => {
       const origin = event.origin;
-      // Validate origin is from AI Studio preview or localhost
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      // Validate origin is from AI Studio preview, localhost, Railway, or same origin
+      if (
+        origin !== window.location.origin && 
+        !origin.endsWith('.run.app') && 
+        !origin.includes('localhost') && 
+        !origin.includes('.up.railway.app')
+      ) {
         return;
       }
       if (event.data?.type === 'GOOGLE_OAUTH_SUCCESS') {
@@ -553,6 +558,7 @@ export default function App() {
       case 'integrations':
         return (
           <IntegrationsView
+            currentUser={currentUser}
             showToast={showToast}
             googleAccessToken={googleAccessToken}
             googleUser={googleUser}

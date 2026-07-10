@@ -970,6 +970,7 @@ CREATE TABLE IF NOT EXISTS user_history (
 
 // Props interface to link with google access token state
 interface IntegrationsProps {
+  currentUser?: any;
   showToast: (msg: string, type?: 'success' | 'info') => void;
   googleAccessToken: string | null;
   googleUser: any;
@@ -981,6 +982,7 @@ interface IntegrationsProps {
 }
 
 export function IntegrationsView({
+  currentUser,
   showToast,
   googleAccessToken,
   googleUser,
@@ -1230,7 +1232,8 @@ export function IntegrationsView({
       </div>
 
       {/* Dynamic Google OAuth Setup Guide & Custom Credentials Configurator */}
-      <div className="bg-surface-dark text-on-dark rounded-xl border border-hairline/10 p-6 shadow-none space-y-5">
+      {currentUser?.role === 'admin' && (
+        <div className="bg-surface-dark text-on-dark rounded-xl border border-hairline/10 p-6 shadow-none space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-white/5 text-primary rounded-lg border border-white/10">
@@ -1371,6 +1374,7 @@ export function IntegrationsView({
           </a>
         </div>
       </div>
+      )}
 
       {/* GitHub connection modal */}
       {showGithubModal && (
