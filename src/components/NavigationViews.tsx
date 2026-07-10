@@ -52,7 +52,7 @@ interface ApiKeysViewProps extends ViewProps {
   onUpdateKeysCount?: (count: number) => void;
 }
 
-export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
+export function ApiKeysView({ showToast, credits, currentUser }: ApiKeysViewProps) {
   const [keys, setKeys] = useState<any[]>([]);
   const [visibleKeyId, setVisibleKeyId] = useState<string | null>(null);
   const [newKeyName, setNewKeyName] = useState('');
@@ -61,17 +61,19 @@ export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
   const [generatedKeyToDisplay, setGeneratedKeyToDisplay] = useState<string | null>(null);
 
   // Playground States
-  const [selectedKeyForPlayground, setSelectedKeyForPlayground] = useState('');
+  const [selectedKeyForPlayground, setSelectedKeyForPlayground] = useState<string>('');
   const [playgroundPrompt, setPlaygroundPrompt] = useState('Write a 1-sentence welcome message for Aira.Ai.');
   const [playgroundResponse, setPlaygroundResponse] = useState<any>(null);
   const [isPlaygroundLoading, setIsPlaygroundLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'playground'>('list');
 
+  const userEmail = currentUser?.email || '';
+
   // Fetch keys from backend on mount
   const fetchKeys = async () => {
     setIsLoadingKeys(true);
     try {
-      const res = await fetch('/api/keys');
+      const res = await fetch(`/api/keys?email=${encodeURIComponent(userEmail)}`);
       if (res.ok) {
         const data = await res.json();
         setKeys(data);
@@ -94,7 +96,7 @@ export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
 
   useEffect(() => {
     fetchKeys();
-  }, []);
+  }, [userEmail]);
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +106,7 @@ export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
       const res = await fetch('/api/keys/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName })
+        body: JSON.stringify({ name: newKeyName, email: userEmail })
       });
       if (res.ok) {
         const newKey = await res.json();
@@ -125,7 +127,7 @@ export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/keys/${encodeURIComponent(fullKey)}`, {
+      const res = await fetch(`/api/keys/${encodeURIComponent(fullKey)}?email=${encodeURIComponent(userEmail)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -139,7 +141,7 @@ export function ApiKeysView({ showToast, credits }: ApiKeysViewProps) {
 
   const handleToggleActive = async (fullKey: string) => {
     try {
-      const res = await fetch(`/api/keys/${encodeURIComponent(fullKey)}/toggle`, {
+      const res = await fetch(`/api/keys/${encodeURIComponent(fullKey)}/toggle?email=${encodeURIComponent(userEmail)}`, {
         method: 'PATCH'
       });
       if (res.ok) {

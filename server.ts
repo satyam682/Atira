@@ -162,25 +162,10 @@ const platformApiKeys = new Map<string, {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  userEmail?: string;
 }>();
 
-// Seed with default keys to match initial design with 10-character prefix (nx_live_xxxxxxxxxx)
-platformApiKeys.set('nx_live_4x8kx2a9s1_sk_live_v23r984712', {
-  name: 'Production Chatbot',
-  created: '2026-06-12',
-  active: true,
-  inputTokens: 1420,
-  outputTokens: 3840,
-  totalTokens: 5260
-});
-platformApiKeys.set('nx_live_9z1cx3b1d5_sk_live_v23r984712', {
-  name: 'Local Test Env',
-  created: '2026-06-30',
-  active: true,
-  inputTokens: 450,
-  outputTokens: 980,
-  totalTokens: 1430
-});
+// No default keys seeded to ensure users start with 0 keys
 
 // ==========================================
 // SUPABASE REAL-TIME PERSISTENCE ENGINE
@@ -564,33 +549,19 @@ async function syncApiKeysFromSupabase() {
     }
     
     if (data && Array.isArray(data)) {
-      if (data.length === 0) {
-        // Seed with default keys if empty
-        const rows = Array.from(platformApiKeys.entries()).map(([key, val]) => ({
-          key: key,
-          name: val.name,
-          created: val.created,
-          active: val.active,
-          input_tokens: val.inputTokens,
-          output_tokens: val.outputTokens,
-          total_tokens: val.totalTokens
-        }));
-        await supabaseClient.from('platform_api_keys').upsert(rows);
-        console.log('[Supabase] Seeded empty platform_api_keys table with default keys.');
-      } else {
-        platformApiKeys.clear();
-        for (const row of data) {
-          platformApiKeys.set(row.key, {
-            name: row.name,
-            created: row.created,
-            active: row.active,
-            inputTokens: row.input_tokens || 0,
-            outputTokens: row.output_tokens || 0,
-            totalTokens: row.total_tokens || 0
-          });
-        }
-        console.log(`[Supabase] Synced ${platformApiKeys.size} API keys from Supabase to memory.`);
+      platformApiKeys.clear();
+      for (const row of data) {
+        platformApiKeys.set(row.key, {
+          name: row.name,
+          created: row.created,
+          active: row.active,
+          inputTokens: row.input_tokens || 0,
+          outputTokens: row.output_tokens || 0,
+          totalTokens: row.total_tokens || 0,
+          userEmail: row.user_email || ''
+        });
       }
+      console.log(`[Supabase] Synced ${platformApiKeys.size} API keys from Supabase to memory.`);
     }
   } catch (err: any) {
     console.log('[Supabase] Issue syncing API keys:', err.message || err);
@@ -600,19 +571,32 @@ async function syncApiKeysFromSupabase() {
 async function saveApiKeyToSupabase(key: string, val: any) {
   if (!useSupabase || !supabaseClient) return;
   try {
+    const payload: any = {
+      key: key,
+      name: val.name,
+      created: val.created,
+      active: val.active,
+      input_tokens: val.inputTokens || 0,
+      output_tokens: val.output_tokens || 0,
+      total_tokens: val.totalTokens || 0
+    };
+    if (val.userEmail) {
+      payload.user_email = val.userEmail;
+    }
+
     const { error } = await supabaseClient
       .from('platform_api_keys')
-      .upsert({
-        key: key,
-        name: val.name,
-        created: val.created,
-        active: val.active,
-        input_tokens: val.inputTokens || 0,
-        output_tokens: val.output_tokens || 0,
-        total_tokens: val.totalTokens || 0
-      });
+      .upsert(payload);
+
     if (error) {
-      console.log('[Supabase] Issue upserting API key:', error.message);
+      console.log('[Supabase] Issue upserting API key with email, retrying without email:', error.message);
+      delete payload.user_email;
+      const { error: retryError } = await supabaseClient
+        .from('platform_api_keys')
+        .upsert(payload);
+      if (retryError) {
+        console.log('[Supabase] Issue upserting API key without email:', retryError.message);
+      }
     }
   } catch (err: any) {
     console.log('[Supabase] Issue saving API key:', err.message || err);
@@ -1122,16 +1106,16 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
       }));
 
       let modelName = "claude-opus-4.8";
-      let maxTokens = 131072;
+      let maxTokens = 8192;
       if (isOpus48) {
         modelName = "claude-opus-4.8";
-        maxTokens = 131072;
+        maxTokens = 8192;
       } else if (isOpus47) {
         modelName = "claude-opus-4.7";
-        maxTokens = 64000;
+        maxTokens = 4096;
       } else if (isOpus46) {
         modelName = "claude-opus-4.6";
-        maxTokens = 64000;
+        maxTokens = 4096;
       }
 
       console.log(`[Kesar/Omega Bypass] Routing ${requestedModel} to KesarCloud ${modelName}...`);
@@ -1980,8 +1964,10 @@ app.get('/api/auth/google/callback', async (req, res) => {
 // Dynamic API Key Generation for NexusAI dashboard
 app.post('/api/keys/generate', (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, email } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
+
+    const userEmail = (email || '').toLowerCase().trim();
 
     // Generate 10 random alphanumeric chars for the xxxxxxxxxx part of 'nx_live_xxxxxxxxxx'
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -2000,7 +1986,8 @@ app.post('/api/keys/generate', (req, res) => {
       active: true,
       inputTokens: 0,
       outputTokens: 0,
-      totalTokens: 0
+      totalTokens: 0,
+      userEmail: userEmail
     };
     platformApiKeys.set(fullKey, newKeyObj);
     saveApiKeyToSupabase(fullKey, newKeyObj);
@@ -2025,21 +2012,27 @@ app.post('/api/keys/generate', (req, res) => {
 
 app.get('/api/keys', (req, res) => {
   try {
-    const list = Array.from(platformApiKeys.entries()).map(([key, value]) => {
-      const parts = key.split('_');
-      const prefix = parts.slice(0, 3).join('_'); // This gives 'nx_live_xxxxxxxxxx'
-      return {
-        name: value.name,
-        prefix: prefix,
-        value: '••••••••••••••••••••' + key.substring(key.length - 4),
-        created: value.created,
-        active: value.active,
-        fullKey: key,
-        inputTokens: value.inputTokens || 0,
-        outputTokens: value.outputTokens || 0,
-        totalTokens: value.totalTokens || 0
-      };
-    });
+    const userEmail = (req.query.email as string || '').toLowerCase().trim();
+
+    const list = Array.from(platformApiKeys.entries())
+      .filter(([key, value]) => {
+        return value.userEmail && value.userEmail.toLowerCase().trim() === userEmail;
+      })
+      .map(([key, value]) => {
+        const parts = key.split('_');
+        const prefix = parts.slice(0, 3).join('_'); // This gives 'nx_live_xxxxxxxxxx'
+        return {
+          name: value.name,
+          prefix: prefix,
+          value: '••••••••••••••••••••' + key.substring(key.length - 4),
+          created: value.created,
+          active: value.active,
+          fullKey: key,
+          inputTokens: value.inputTokens || 0,
+          outputTokens: value.outputTokens || 0,
+          totalTokens: value.totalTokens || 0
+        };
+      });
     res.json(list);
   } catch (err: any) {
     console.error('get keys error:', err);
@@ -2050,22 +2043,32 @@ app.get('/api/keys', (req, res) => {
 app.delete('/api/keys/:key', (req, res) => {
   try {
     const targetKey = req.params.key;
+    const userEmail = (req.query.email as string || '').toLowerCase().trim();
+
+    let actualKey = '';
     if (platformApiKeys.has(targetKey)) {
-      platformApiKeys.delete(targetKey);
-      deleteApiKeyFromSupabase(targetKey);
-      res.json({ success: true });
+      const keyObj = platformApiKeys.get(targetKey);
+      if (keyObj && keyObj.userEmail?.toLowerCase().trim() === userEmail) {
+        actualKey = targetKey;
+      }
     } else {
-      // Also check prefix matches
-      let found = false;
       for (const k of platformApiKeys.keys()) {
         if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
-          platformApiKeys.delete(k);
-          deleteApiKeyFromSupabase(k);
-          found = true;
-          break;
+          const keyObj = platformApiKeys.get(k);
+          if (keyObj && keyObj.userEmail?.toLowerCase().trim() === userEmail) {
+            actualKey = k;
+            break;
+          }
         }
       }
-      res.json({ success: found });
+    }
+
+    if (actualKey) {
+      platformApiKeys.delete(actualKey);
+      deleteApiKeyFromSupabase(actualKey);
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Key not found or unauthorized' });
     }
   } catch (err: any) {
     console.error('delete key error:', err);
@@ -2076,25 +2079,38 @@ app.delete('/api/keys/:key', (req, res) => {
 app.patch('/api/keys/:key/toggle', (req, res) => {
   try {
     const targetKey = req.params.key;
-    let keyToToggle = targetKey;
-    if (!platformApiKeys.has(targetKey)) {
-      // Try to find matching key
+    const userEmail = (req.query.email as string || '').toLowerCase().trim();
+
+    let keyToToggle = '';
+    if (platformApiKeys.has(targetKey)) {
+      const keyObj = platformApiKeys.get(targetKey);
+      if (keyObj && keyObj.userEmail?.toLowerCase().trim() === userEmail) {
+        keyToToggle = targetKey;
+      }
+    } else {
       for (const k of platformApiKeys.keys()) {
         if (k.startsWith(targetKey) || k.endsWith(targetKey)) {
-          keyToToggle = k;
-          break;
+          const keyObj = platformApiKeys.get(k);
+          if (keyObj && keyObj.userEmail?.toLowerCase().trim() === userEmail) {
+            keyToToggle = k;
+            break;
+          }
         }
       }
     }
 
-    const existing = platformApiKeys.get(keyToToggle);
-    if (existing) {
-      existing.active = !existing.active;
-      platformApiKeys.set(keyToToggle, existing);
-      saveApiKeyToSupabase(keyToToggle, existing);
-      res.json({ success: true, active: existing.active });
+    if (keyToToggle) {
+      const existing = platformApiKeys.get(keyToToggle);
+      if (existing) {
+        existing.active = !existing.active;
+        platformApiKeys.set(keyToToggle, existing);
+        saveApiKeyToSupabase(keyToToggle, existing);
+        res.json({ success: true, active: existing.active });
+      } else {
+        res.status(404).json({ error: 'Key not found' });
+      }
     } else {
-      res.status(404).json({ error: 'Key not found' });
+      res.status(404).json({ error: 'Key not found or unauthorized' });
     }
   } catch (err: any) {
     console.error('toggle key error:', err);
@@ -5636,19 +5652,99 @@ ${userRules || 'No custom memory rules found.'}
       throw new Error(cohereResult);
     }
 
-    // Helper to clean markdown block enclosures and parse JSON
+    // Helper to repair truncated JSON by closing open brackets and quotes
+    const repairTruncatedJSON = (jsonStr: string): any => {
+      let cleaned = jsonStr.trim();
+      let inString = false;
+      let escaped = false;
+      let bracketStack: string[] = [];
+      
+      for (let i = 0; i < cleaned.length; i++) {
+        const char = cleaned[i];
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (!inString) {
+          if (char === '{' || char === '[') {
+            bracketStack.push(char);
+          } else if (char === '}') {
+            if (bracketStack[bracketStack.length - 1] === '{') {
+              bracketStack.pop();
+            }
+          } else if (char === ']') {
+            if (bracketStack[bracketStack.length - 1] === '[') {
+              bracketStack.pop();
+            }
+          }
+        }
+      }
+      
+      if (inString) {
+        cleaned += '"';
+      }
+      
+      while (bracketStack.length > 0) {
+        const openBracket = bracketStack.pop();
+        if (openBracket === '{') {
+          cleaned += '}';
+        } else if (openBracket === '[') {
+          cleaned += ']';
+        }
+      }
+      
+      try {
+        return JSON.parse(cleaned);
+      } catch (e: any) {
+        throw new Error(`JSON could not be automatically repaired: ${e.message}`);
+      }
+    };
+
+    // Helper to clean markdown block enclosures and parse JSON robustly
     const tryParseJSON = (text: string) => {
       let cleaned = text.trim();
-      if (cleaned.startsWith('```json')) {
-        cleaned = cleaned.substring(7);
-      } else if (cleaned.startsWith('```')) {
-        cleaned = cleaned.substring(3);
+      
+      // Try direct parse first
+      try {
+        return JSON.parse(cleaned);
+      } catch (e) {
+        // Strip code fences if present
+        if (cleaned.startsWith('```json')) {
+          cleaned = cleaned.substring(7);
+        } else if (cleaned.startsWith('```')) {
+          cleaned = cleaned.substring(3);
+        }
+        if (cleaned.endsWith('```')) {
+          cleaned = cleaned.substring(0, cleaned.length - 3);
+        }
+        cleaned = cleaned.trim();
+        
+        try {
+          return JSON.parse(cleaned);
+        } catch (e2) {
+          // Try extracting first { to last }
+          const startIdx = cleaned.indexOf('{');
+          const endIdx = cleaned.lastIndexOf('}');
+          if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            const jsonCandidate = cleaned.substring(startIdx, endIdx + 1);
+            try {
+              return JSON.parse(jsonCandidate);
+            } catch (e3) {
+              // Try repairing truncated JSON as a last resort
+              return repairTruncatedJSON(jsonCandidate);
+            }
+          }
+          throw e2;
+        }
       }
-      if (cleaned.endsWith('```')) {
-        cleaned = cleaned.substring(0, cleaned.length - 3);
-      }
-      cleaned = cleaned.trim();
-      return JSON.parse(cleaned);
     };
 
     // First Parse Attempt
