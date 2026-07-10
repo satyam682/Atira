@@ -552,7 +552,7 @@ export default function App() {
           </div>
         );
       case 'api-keys':
-        return <ApiKeysView showToast={showToast} credits={credits} />;
+        return <ApiKeysView showToast={showToast} credits={credits} currentUser={currentUser} />;
       case 'usage':
         return <UsageView showToast={showToast} credits={credits} currentUser={currentUser} />;
       case 'integrations':

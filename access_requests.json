@@ -1,5 +1,17 @@
 [
   {
+    "id": "req-1783448509743-d1xletu99",
+    "name": "aryan somani",
+    "email": "aryansomani9122007@gmail.com",
+    "status": "approved",
+    "credits": 148.7337,
+    "rpmLimit": 60,
+    "creditsExpiry": "2026-08-06T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-07T18:21:49.744Z",
+    "approvedAt": "2026-07-07T18:22:04.068Z"
+  },
+  {
     "id": "req-1783173819035-h4pb2fki8",
     "name": "satyam",
     "email": "satyamkadavla@gmail.com",
@@ -38,14 +50,14 @@
   {
     "id": "admin-req",
     "name": "Admin User",
-    "email": "satyamkadavla19@gmail.com",
+    "email": "satyamkadavla79@gmail.com",
     "status": "approved",
-    "credits": 9999,
+    "credits": 9997.84665,
     "rpmLimit": 1000,
-    "creditsExpiry": "2027-07-07T06:41:01.238Z",
+    "creditsExpiry": "2027-07-08T07:09:39.980Z",
     "approvedBy": "system",
-    "createdAt": "2026-07-07T06:41:01.238Z",
-    "approvedAt": "2026-07-07T06:41:01.238Z"
+    "createdAt": "2026-07-08T07:09:39.980Z",
+    "approvedAt": "2026-07-08T07:09:39.980Z"
   },
   {
     "id": "req-1783188129070-gjqxdbq3s",
