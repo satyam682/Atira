@@ -1101,14 +1101,18 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
     requestedModel.toLowerCase().includes('opus 4.7') || 
     requestedModel.toLowerCase().includes('minimax-m3')
   );
-  const shouldBypassToFireworks = isOpus48 || isOpus47;
+  const isOpus46 = requestedModel && (
+    requestedModel.toLowerCase().includes('opus-4.6') || 
+    requestedModel.toLowerCase().includes('opus 4.6')
+  );
+  const shouldBypassToKesar = isOpus48 || isOpus47 || isOpus46;
 
-  if (shouldBypassToFireworks) {
+  if (shouldBypassToKesar) {
     try {
-      const endpoint = "https://api.fireworks.ai/inference/v1/chat/completions";
-      const fireworksApiKey = process.env.FIREWORKS_API_KEY;
-      if (!fireworksApiKey) {
-        throw new Error("FIREWORKS_API_KEY environment variable is not configured. Please set it in your environment or Railway variables.");
+      const endpoint = "https://omega.kesarcloud.in/v1/chat/completions";
+      const omegaApiKey = process.env.OMEGA_API_KEY;
+      if (!omegaApiKey) {
+        throw new Error("OMEGA_API_KEY environment variable is not configured. Please set it in your environment or Railway variables.");
       }
       
       const openAiMessages = messages.map(m => ({
@@ -1116,16 +1120,26 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         content: m.content
       }));
 
-      const modelName = isOpus48 ? "accounts/fireworks/models/glm-5p2" : "accounts/fireworks/models/minimax-m3";
-      const maxTokens = isOpus48 ? 131072 : 64000;
+      let modelName = "claude-opus-4.8";
+      let maxTokens = 131072;
+      if (isOpus48) {
+        modelName = "claude-opus-4.8";
+        maxTokens = 131072;
+      } else if (isOpus47) {
+        modelName = "claude-opus-4.7";
+        maxTokens = 64000;
+      } else if (isOpus46) {
+        modelName = "claude-opus-4.6";
+        maxTokens = 64000;
+      }
 
-      console.log(`[Claude-Opus Bypass] Routing ${requestedModel} to Fireworks ${modelName}...`);
+      console.log(`[Kesar/Omega Bypass] Routing ${requestedModel} to KesarCloud ${modelName}...`);
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Accept": "application/json",
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${fireworksApiKey}`
+          "Authorization": `Bearer ${omegaApiKey}`
         },
         body: JSON.stringify({
           model: modelName,
@@ -1133,13 +1147,14 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
           top_k: 40,
           presence_penalty: 0,
           frequency_penalty: 0,
-          messages: openAiMessages
+          messages: openAiMessages,
+          stream: false
         })
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Fireworks API error: ${response.status} - ${errText}`);
+        throw new Error(`KesarCloud/Omega API error: ${response.status} - ${errText}`);
       }
 
       const data = await response.json();
@@ -1156,13 +1171,11 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
 
       return resultText;
     } catch (err: any) {
-      console.error("[Claude-Opus Bypass] Failed calling Fireworks, falling back to other configs:", err);
+      console.error("[Kesar/Omega Bypass] Failed calling KesarCloud, falling back to other configs:", err);
     }
   }
 
   const configs = await getUpstreamConfigs();
-  
-  const isOpus46 = requestedModel && (requestedModel.toLowerCase().includes('opus-4.6') || requestedModel.toLowerCase().includes('opus 4.6'));
   
   const availableConfigs = configs
     .filter(c => {
