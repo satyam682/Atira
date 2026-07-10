@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 dotenv.config();
 
 const app = express();
+app.enable('trust proxy');
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
 // Supabase global flags declared early for helper function references
@@ -1867,7 +1868,9 @@ app.get('/api/auth/google/url', (req, res) => {
 // Google Custom OAuth Endpoint: Exchange code for tokens
 app.get('/api/auth/google/callback', async (req, res) => {
   const { code } = req.query;
-  const redirectUri = (req.query.redirect_uri as string) || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+  const host = req.get('host') || '';
+  const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https';
+  const redirectUri = (req.query.redirect_uri as string) || `${protocol}://${host}/api/auth/google/callback`;
 
   if (!code) {
     return res.status(400).send('Authorization code is missing.');
