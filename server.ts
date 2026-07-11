@@ -579,7 +579,7 @@ async function saveApiKeyToSupabase(key: string, val: any) {
       created: val.created,
       active: val.active,
       input_tokens: val.inputTokens || 0,
-      output_tokens: val.output_tokens || 0,
+      output_tokens: val.outputTokens || 0,
       total_tokens: val.totalTokens || 0
     };
     if (val.userEmail) {
