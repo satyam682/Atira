@@ -141,14 +141,20 @@ export default function Sidebar({
         <div className="p-4">
           {isCollapsed ? (
             <div className="flex justify-center">
-              <button
-                id="credits-add-collapsed-btn"
-                onClick={onAddCredits}
-                className="w-10 h-10 rounded-xl bg-surface-card text-primary flex items-center justify-center hover:bg-surface-cream-strong transition-colors"
-                title="Add Credits"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+              {currentUser?.role === 'admin' ? (
+                <button
+                  id="credits-add-collapsed-btn"
+                  onClick={onAddCredits}
+                  className="w-10 h-10 rounded-xl bg-surface-card text-primary flex items-center justify-center hover:bg-surface-cream-strong transition-colors"
+                  title="Add Credits"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-surface-card text-muted flex items-center justify-center font-mono text-[10px] font-semibold border border-hairline" title={`${credits.toFixed(4)} credits`}>
+                  {credits.toFixed(0)}
+                </div>
+              )}
             </div>
           ) : (
             <motion.div
@@ -160,14 +166,16 @@ export default function Sidebar({
                 <p className="text-[12px] font-medium text-muted tracking-widest uppercase">CREDITS</p>
                 <p className="text-lg font-normal font-mono text-ink mt-0.5">{credits.toFixed(4)}</p>
               </div>
-              <button
-                id="add-credits-btn"
-                onClick={onAddCredits}
-                className="w-8 h-8 rounded-lg bg-primary text-white hover:bg-primary-active flex items-center justify-center transition-colors"
-                title="Buy Credits"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+              {currentUser?.role === 'admin' && (
+                <button
+                  id="add-credits-btn"
+                  onClick={onAddCredits}
+                  className="w-8 h-8 rounded-lg bg-primary text-white hover:bg-primary-active flex items-center justify-center transition-colors"
+                  title="Buy Credits"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
             </motion.div>
           )}
         </div>
