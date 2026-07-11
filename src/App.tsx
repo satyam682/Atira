@@ -27,7 +27,16 @@ export default function App() {
   // Sidebar and navigation states
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState<NavItemId>('chat');
+  const [activeNav, setActiveNav] = useState<NavItemId>(() => {
+    try {
+      const saved = localStorage.getItem('conduit_current_user');
+      const u = saved ? JSON.parse(saved) : null;
+      if (u) {
+        return u.role === 'admin' ? 'admin' : 'api-keys';
+      }
+    } catch {}
+    return 'chat';
+  });
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('chat');
   const [credits, setCredits] = useState(0);
   const [adminStats, setAdminStats] = useState<{ totalCreditsProvided: number; totalCreditsUsed: number } | null>(null);
@@ -528,6 +537,34 @@ export default function App() {
 
   // Render main viewport depending on current active nav menu selection
   const renderMainContent = () => {
+    // Restrict normal users to 'api-keys' only, showing Under Maintenance for all other sections
+    if (currentUser && currentUser.role !== 'admin' && activeNav !== 'api-keys') {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
+          <div className="max-w-md w-full p-8 bg-white border border-gray-150 rounded-2xl space-y-6 shadow-sm">
+            <div className="w-16 h-16 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
+              <Key className="w-8 h-8 animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-gray-900 tracking-tight">Under Maintenance</h3>
+              <p className="text-xs text-gray-500 leading-relaxed font-medium">
+                Our sandbox chat, coding workspaces, and custom integrations are currently undergoing routine system updates.
+              </p>
+              <p className="text-xs font-semibold text-indigo-600">
+                Only the API Keys section is active.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveNav('api-keys')}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-all shadow-sm"
+            >
+              Go to API Keys Configuration
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeNav) {
       case 'chat':
       case 'history':
@@ -598,7 +635,7 @@ export default function App() {
             if (u.role === 'admin') {
               setActiveNav('admin');
             } else {
-              setActiveNav('chat');
+              setActiveNav('api-keys');
             }
           }}
           showToast={showToast}

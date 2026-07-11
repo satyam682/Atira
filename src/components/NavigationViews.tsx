@@ -38,7 +38,8 @@ import {
   Clock,
   AlertCircle,
   Pencil,
-  X
+  X,
+  CreditCard
 } from 'lucide-react';
 import SpikeMark from './SpikeMark';
 
@@ -1573,7 +1574,7 @@ export function SettingsView({ showToast }: ViewProps) {
 }
 
 export function AdminPanelView({ showToast }: ViewProps) {
-  const [activeTab, setActiveTab] = useState<'users' | 'invitations' | 'add-user' | 'pricing'>('invitations');
+  const [activeTab, setActiveTab] = useState<'users' | 'invitations' | 'add-user' | 'pricing' | 'billing'>('invitations');
   const [stats, setStats] = useState({
     totalUsers: 0,
     pendingInvitations: 0,
@@ -1586,6 +1587,11 @@ export function AdminPanelView({ showToast }: ViewProps) {
   });
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Billing tab states
+  const [billingStats, setBillingStats] = useState<any[]>([]);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [selectedUserBilling, setSelectedUserBilling] = useState<any>(null);
 
   // Upstream API configurations state
   const [configs, setConfigs] = useState<any[]>([]);
@@ -1638,6 +1644,27 @@ export function AdminPanelView({ showToast }: ViewProps) {
       setConfigsLoading(false);
     }
   };
+
+  const fetchBillingStats = async () => {
+    setBillingLoading(true);
+    try {
+      const res = await fetch(`/api/admin/billing-stats?email=${encodeURIComponent(adminEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBillingStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch billing stats:', err);
+    } finally {
+      setBillingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'billing') {
+      fetchBillingStats();
+    }
+  }, [activeTab]);
 
   const fetchAuditLogs = async () => {
     setLogsLoading(true);
@@ -2267,6 +2294,16 @@ export function AdminPanelView({ showToast }: ViewProps) {
         >
           Pricing & Token Nodes
         </button>
+        <button
+          onClick={() => setActiveTab('billing')}
+          className={`pb-3 px-4 text-xs font-semibold tracking-tight transition-all border-b-2 cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'billing'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted hover:text-ink'
+          }`}
+        >
+          <CreditCard className="w-3.5 h-3.5" /> Billing & Usage
+        </button>
       </div>
 
       {/* Tab Panels */}
@@ -2518,6 +2555,218 @@ export function AdminPanelView({ showToast }: ViewProps) {
               <UserPlus className="w-4 h-4" /> Add & Provision Whitelist User
             </button>
           </form>
+        </div>
+      )}
+
+      {activeTab === 'billing' && (
+        <div className="space-y-6">
+          {/* Billing Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-surface-card border border-hairline p-5 rounded-xl flex items-center gap-4">
+              <div className="w-10 h-10 bg-primary/10 border border-primary/20 text-primary rounded-full flex items-center justify-center shrink-0">
+                <CreditCard className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Total Aggregated Invoice</p>
+                <p className="text-xl font-normal text-ink font-serif tracking-tight mt-0.5">
+                  ${billingStats.reduce((acc, u) => acc + (u.bill || 0), 0).toFixed(4)}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-surface-card border border-hairline p-5 rounded-xl flex items-center gap-4">
+              <div className="w-10 h-10 bg-primary/10 border border-primary/20 text-primary rounded-full flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Invoiced Client Profiles</p>
+                <p className="text-xl font-normal text-ink font-serif tracking-tight mt-0.5">
+                  {billingStats.length} active users
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-surface-card border border-hairline p-5 rounded-xl flex items-center gap-4">
+              <div className="w-10 h-10 bg-primary/10 border border-primary/20 text-primary rounded-full flex items-center justify-center shrink-0">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Total Aggregated Tokens</p>
+                <p className="text-xl font-normal text-ink font-serif tracking-tight mt-0.5">
+                  {billingStats.reduce((acc, u) => acc + (u.totalTokens || 0), 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing Table (Matching user image) */}
+          <div className="bg-surface-card border border-hairline rounded-xl p-5 space-y-3">
+            <h3 className="font-medium text-ink text-sm font-serif flex items-center gap-2">
+              <Database className="w-4 h-4 text-primary" /> Active Billing Rates Matrix
+            </h3>
+            <p className="text-xs text-muted-soft">
+              Real-time token cost computation rates applied to customer proxy gateways.
+            </p>
+            <div className="overflow-x-auto pt-1">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-surface-soft text-muted uppercase tracking-wider text-[9px] font-medium border-b border-hairline-soft">
+                    <th className="p-3 pl-4">MODEL/PROVIDER</th>
+                    <th className="p-3">INPUT RATE</th>
+                    <th className="p-3">CACHED INPUT</th>
+                    <th className="p-3">OUTPUT RATE</th>
+                    <th className="p-3">BATCH INPUT</th>
+                    <th className="p-3">BATCH OUTPUT</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-hairline-soft font-mono text-[11px] text-body">
+                  <tr>
+                    <td className="p-3 pl-4 font-sans font-semibold text-ink">Opus (GLM-5p2 / Claude Bypass)</td>
+                    <td className="p-3">$5.00 / MTok</td>
+                    <td className="p-3">$6.25 / MTok</td>
+                    <td className="p-3">$15.00 / MTok</td>
+                    <td className="p-3">$0.50 / MTok</td>
+                    <td className="p-3">$25.00 / MTok</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* User billing ledger list */}
+          <div className="bg-surface-card border border-hairline rounded-xl overflow-hidden shadow-none">
+            <div className="p-5 border-b border-hairline-soft flex items-center justify-between">
+              <h3 className="font-medium text-ink text-sm font-serif">User Usage & Invoices Ledger</h3>
+              <button 
+                onClick={fetchBillingStats}
+                disabled={billingLoading}
+                className="p-1 hover:bg-surface-soft rounded text-muted-soft hover:text-primary transition-colors cursor-pointer"
+                title="Refresh Ledger"
+              >
+                <RefreshCw className={`w-4 h-4 ${billingLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {billingLoading ? (
+              <div className="p-12 text-center text-xs text-muted-soft">Loading billing ledger...</div>
+            ) : billingStats.length === 0 ? (
+              <div className="p-12 text-center text-xs text-muted-soft italic">No active approved users found to bill.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-surface-soft text-muted uppercase tracking-wider text-[10px] font-medium border-b border-hairline-soft">
+                      <th className="p-4 pl-6">USER EMAIL & NAME</th>
+                      <th className="p-4 text-center">API KEYS</th>
+                      <th className="p-4">INPUT TOKENS</th>
+                      <th className="p-4">OUTPUT TOKENS</th>
+                      <th className="p-4">TOTAL TOKENS</th>
+                      <th className="p-4 font-semibold text-primary">COMPUTED INVOICE</th>
+                      <th className="p-4 pr-6 text-right">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-hairline-soft font-sans text-body">
+                    {billingStats.map(u => (
+                      <tr key={u.email} className="hover:bg-surface-soft/40 transition-colors">
+                        <td className="p-4 pl-6">
+                          <div className="font-medium text-ink">{u.name}</div>
+                          <div className="text-[10px] text-muted-soft font-mono mt-0.5">{u.email}</div>
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className="bg-surface-soft border border-hairline px-2 py-0.5 rounded text-[10px] font-medium">
+                            {u.keysCount} keys
+                          </span>
+                        </td>
+                        <td className="p-4 font-mono text-[11px]">{u.inputTokens.toLocaleString()}</td>
+                        <td className="p-4 font-mono text-[11px]">{u.outputTokens.toLocaleString()}</td>
+                        <td className="p-4 font-mono text-[11px] text-muted-soft">{u.totalTokens.toLocaleString()}</td>
+                        <td className="p-4 font-mono text-xs font-semibold text-primary">${u.bill.toFixed(4)}</td>
+                        <td className="p-4 pr-6 text-right">
+                          <button
+                            onClick={() => setSelectedUserBilling(u)}
+                            className="px-3 py-1 bg-canvas hover:bg-surface-soft border border-hairline text-primary rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                          >
+                            Details & Keys
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* User detailed usage slide-out dialog */}
+          {selectedUserBilling && (
+            <div className="fixed inset-0 bg-surface-dark/40 flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+              <div className="bg-canvas border border-hairline rounded-xl max-w-2xl w-full p-6 space-y-5 shadow-none animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <h3 className="font-normal text-ink text-base font-serif tracking-tight">User Keys Invoice Breakdown</h3>
+                    <p className="text-xs text-muted-soft">Detailed metrics for <strong className="text-ink">{selectedUserBilling.name}</strong> ({selectedUserBilling.email})</p>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedUserBilling(null)}
+                    className="p-1 rounded-lg hover:bg-surface-soft text-muted-soft hover:text-muted transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto max-h-80 border border-hairline-soft rounded-lg">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-surface-soft text-muted uppercase tracking-wider text-[9px] font-medium border-b border-hairline-soft">
+                        <th className="p-3 pl-4">KEY NAME & PREFIX</th>
+                        <th className="p-3">RESTRICTED TO</th>
+                        <th className="p-3">INPUT TOKENS</th>
+                        <th className="p-3">OUTPUT TOKENS</th>
+                        <th className="p-3">TOTAL TOKENS</th>
+                        <th className="p-3 pr-4 font-semibold text-primary">BILL AMOUNT</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hairline-soft font-sans text-body">
+                      {selectedUserBilling.keys.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-6 text-center text-muted-soft italic">No API keys generated by this user.</td>
+                        </tr>
+                      ) : (
+                        selectedUserBilling.keys.map((k: any) => {
+                          const kBill = ((k.inputTokens * 5.00) / 1000000) + ((k.outputTokens * 15.00) / 1000000);
+                          return (
+                            <tr key={k.key}>
+                              <td className="p-3 pl-4">
+                                <div className="font-medium text-ink">{k.name}</div>
+                                <div className="text-[9px] text-muted-soft font-mono mt-0.5">{k.key}</div>
+                              </td>
+                              <td className="p-3 font-mono text-[10px]">{k.restrictedModel || 'All'}</td>
+                              <td className="p-3 font-mono text-[11px]">{k.inputTokens.toLocaleString()}</td>
+                              <td className="p-3 font-mono text-[11px]">{k.outputTokens.toLocaleString()}</td>
+                              <td className="p-3 font-mono text-[11px] text-muted-soft">{k.totalTokens.toLocaleString()}</td>
+                              <td className="p-3 pr-4 font-mono text-xs font-semibold text-primary">${kBill.toFixed(4)}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-hairline-soft flex justify-between items-center text-xs">
+                  <div className="font-mono text-muted-soft">
+                    Combined Cost: <strong className="text-primary">${selectedUserBilling.bill.toFixed(4)}</strong>
+                  </div>
+                  <button
+                    onClick={() => setSelectedUserBilling(null)}
+                    className="px-4 py-1.5 bg-primary hover:bg-primary-active text-white rounded-lg text-xs font-semibold shadow-none cursor-pointer"
+                  >
+                    Close Breakdown
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

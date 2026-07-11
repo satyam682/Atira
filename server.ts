@@ -4863,6 +4863,70 @@ app.get('/api/admin/registered-users', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// GET /api/admin/billing-stats: Aggregate key usage metrics per user for admin invoicing
+app.get('/api/admin/billing-stats', async (req, res) => {
+  try {
+    const adminEmail = (req.query.email as string || '').toLowerCase().trim();
+
+    // Load all approved users
+    let approvedUsers: any[] = [];
+    if (useSupabase && supabaseClient) {
+      const { data, error } = await supabaseClient
+        .from('access_requests')
+        .select('*')
+        .eq('status', 'approved');
+      if (!error && data) {
+        approvedUsers = data.map(r => ({ email: r.email, name: r.name }));
+      }
+    } else {
+      const reqs = loadAccessRequests();
+      approvedUsers = reqs.filter(r => r.status === 'approved').map(r => ({ email: r.email, name: r.name }));
+    }
+
+    // Group keys and sum tokens for each user
+    const userBillingList = approvedUsers.map(user => {
+      const userKeys = Array.from(platformApiKeys.entries())
+        .filter(([key, val]) => val.userEmail?.toLowerCase().trim() === user.email.toLowerCase().trim())
+        .map(([key, val]) => {
+          const parts = key.split('_');
+          const prefix = parts.slice(0, 3).join('_'); // This gives 'nx_live_xxxxxxxxxx'
+          return {
+            key: prefix + '_sk_live_••••' + key.substring(key.length - 4),
+            name: val.name,
+            inputTokens: val.inputTokens || 0,
+            outputTokens: val.outputTokens || 0,
+            totalTokens: val.totalTokens || 0,
+            restrictedModel: val.restrictedModel || 'All'
+          };
+        });
+
+      const totalInput = userKeys.reduce((acc, k) => acc + k.inputTokens, 0);
+      const totalOutput = userKeys.reduce((acc, k) => acc + k.outputTokens, 0);
+      
+      // Calculate costs: $5.00/MTok input, $15.00/MTok output (as estimated from the image columns)
+      const inputCost = (totalInput * 5.00) / 1000000;
+      const outputCost = (totalOutput * 15.00) / 1000000;
+      const totalBill = inputCost + outputCost;
+
+      return {
+        email: user.email,
+        name: user.name,
+        keysCount: userKeys.length,
+        keys: userKeys,
+        inputTokens: totalInput,
+        outputTokens: totalOutput,
+        totalTokens: totalInput + totalOutput,
+        bill: parseFloat(totalBill.toFixed(6))
+      };
+    });
+
+    res.json(userBillingList);
+  } catch (err: any) {
+    console.error('get billing stats error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 // ==========================================
