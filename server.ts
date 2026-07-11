@@ -3656,6 +3656,41 @@ app.post('/api/gateway/chat', async (req, res) => {
     }
   }
 
+  const userEmail = existingKey.userEmail ? existingKey.userEmail.toLowerCase().trim() : '';
+
+  // Validate user credit balances before running inference
+  if (userEmail) {
+    let userReq: any = null;
+    if (useSupabase && supabaseClient) {
+      try {
+        const { data } = await supabaseClient
+          .from('access_requests')
+          .select('*')
+          .eq('email', userEmail)
+          .single();
+        if (data) {
+          userReq = {
+            credits: data.credits !== null ? parseFloat(data.credits) : null,
+            creditsExpiry: data.credits_expiry
+          };
+        }
+      } catch (err) {}
+    } else {
+      const requests = loadAccessRequests();
+      userReq = requests.find(r => r.email.toLowerCase().trim() === userEmail);
+    }
+
+    if (userReq) {
+      const now = new Date();
+      if (userReq.creditsExpiry && new Date(userReq.creditsExpiry) < now) {
+        return res.status(403).json({ error: 'you are out of credit' });
+      }
+      if (userReq.credits !== null && userReq.credits !== undefined && userReq.credits <= 0) {
+        return res.status(403).json({ error: 'you are out of credit' });
+      }
+    }
+  }
+
   try {
     const responseText = await callCohereAPI(messages, requestedModel);
     
@@ -3670,6 +3705,76 @@ app.post('/api/gateway/chat', async (req, res) => {
     existingKey.totalTokens = (existingKey.totalTokens || 0) + totalTokens;
     platformApiKeys.set(token, existingKey);
     saveApiKeyToSupabase(token, existingKey);
+
+    // Deduct calculated token costs from user balance in real-time
+    if (userEmail) {
+      const calculatedCost = parseFloat(((promptTokens * 5.00 / 1000000) + (completionTokens * 15.00 / 1000000)).toFixed(6));
+
+      if (useSupabase && supabaseClient) {
+        try {
+          const { data: userReqRow } = await supabaseClient
+            .from('access_requests')
+            .select('credits')
+            .eq('email', userEmail)
+            .single();
+
+          if (userReqRow) {
+            const currentCredits = userReqRow.credits ?? 0;
+            const newCredits = Math.max(0, parseFloat((currentCredits - calculatedCost).toFixed(6)));
+            
+            await supabaseClient
+              .from('access_requests')
+              .update({ credits: newCredits })
+              .eq('email', userEmail);
+          }
+        } catch (err: any) {
+          console.error('[Supabase] Failed to deduct credits dynamically in gateway:', err.message);
+        }
+      } else {
+        const requests = loadAccessRequests();
+        const idx = requests.findIndex(r => r.email.toLowerCase().trim() === userEmail);
+        if (idx >= 0) {
+          if (requests[idx].credits !== null && requests[idx].credits !== undefined) {
+            requests[idx].credits = Math.max(0, parseFloat((requests[idx].credits - calculatedCost).toFixed(6)));
+            saveAccessRequests(requests);
+          }
+        }
+      }
+
+      // Also log usage metrics to public.user_usage table
+      try {
+        const { data: usage } = await supabaseClient
+          .from('user_usage')
+          .select('*')
+          .eq('user_email', userEmail)
+          .single();
+
+        if (usage) {
+          await supabaseClient
+            .from('user_usage')
+            .update({
+              total_requests: (usage.total_requests || 0) + 1,
+              credits_spent: parseFloat((parseFloat(usage.credits_spent || 0) + calculatedCost).toFixed(6)),
+              input_tokens: (usage.input_tokens || 0) + promptTokens,
+              output_tokens: (usage.output_tokens || 0) + completionTokens,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_email', userEmail);
+        } else {
+          await supabaseClient
+            .from('user_usage')
+            .insert({
+              user_email: userEmail,
+              total_requests: 1,
+              credits_spent: calculatedCost,
+              input_tokens: promptTokens,
+              output_tokens: completionTokens
+            });
+        }
+      } catch (err: any) {
+        console.error('Failed to update user_usage in gateway:', err.message);
+      }
+    }
 
     res.json({
       choices: [
