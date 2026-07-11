@@ -394,13 +394,23 @@ export default function Sidebar({
             >
               <MessageSquare className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setWorkspaceMode('coding')}
-              className={`p-2 rounded-lg transition-colors ${workspaceMode === 'coding' ? 'bg-surface-card text-ink' : 'text-muted hover:text-ink hover:bg-surface-soft'}`}
-              title="Coding Mode"
-            >
-              <Code className="w-4 h-4" />
-            </button>
+            {currentUser?.role === 'admin' ? (
+              <button
+                onClick={() => setWorkspaceMode('coding')}
+                className={`p-2 rounded-lg transition-colors ${workspaceMode === 'coding' ? 'bg-surface-card text-ink' : 'text-muted hover:text-ink hover:bg-surface-soft'}`}
+                title="Coding Mode"
+              >
+                <Code className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                className="p-2 rounded-lg opacity-40 cursor-not-allowed text-muted"
+                title="Coding (Under Maintenance)"
+                disabled
+              >
+                <Code className="w-4 h-4" />
+              </button>
+            )}
             <button
               className="p-2 rounded-lg opacity-40 cursor-not-allowed text-muted"
               title="Co-work (Coming Soon)"
@@ -426,18 +436,30 @@ export default function Sidebar({
                 <span className="text-[10px] font-medium font-sans">Chat</span>
               </button>
 
-              <button
-                id="ws-mode-coding"
-                onClick={() => setWorkspaceMode('coding')}
-                className={`relative py-1.5 flex flex-col items-center justify-center rounded-md transition-all ${
-                  workspaceMode === 'coding'
-                    ? 'bg-canvas border border-hairline text-ink'
-                    : 'text-muted hover:text-ink'
-                }`}
-              >
-                <Code className="w-4 h-4 mb-0.5" />
-                <span className="text-[10px] font-medium font-sans">Coding</span>
-              </button>
+              {currentUser?.role === 'admin' ? (
+                <button
+                  id="ws-mode-coding"
+                  onClick={() => setWorkspaceMode('coding')}
+                  className={`relative py-1.5 flex flex-col items-center justify-center rounded-md transition-all ${
+                    workspaceMode === 'coding'
+                      ? 'bg-canvas border border-hairline text-ink'
+                      : 'text-muted hover:text-ink'
+                  }`}
+                >
+                  <Code className="w-4 h-4 mb-0.5" />
+                  <span className="text-[10px] font-medium font-sans">Coding</span>
+                </button>
+              ) : (
+                <button
+                  id="ws-mode-coding"
+                  className="relative py-1.5 flex flex-col items-center justify-center rounded-md opacity-40 cursor-not-allowed text-muted"
+                  title="Coding (Under Maintenance)"
+                  disabled
+                >
+                  <Code className="w-4 h-4 mb-0.5" />
+                  <span className="text-[10px] font-medium font-sans">Coding</span>
+                </button>
+              )}
 
               <button
                 id="ws-mode-cowork"
