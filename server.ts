@@ -1089,6 +1089,15 @@ function extractTextFromCohereContent(content: any): string {
 }
 
 async function callDynamicAPI(messages: any[], requestedModel?: string, userEmail?: string): Promise<string> {
+  const result = await callDynamicAPIWithUsage(messages, requestedModel, userEmail);
+  return result.text;
+}
+
+async function callDynamicAPIWithUsage(
+  messages: any[],
+  requestedModel?: string,
+  userEmail?: string
+): Promise<{ text: string; promptTokens: number; completionTokens: number }> {
   const isOpus48 = requestedModel && (
     requestedModel.toLowerCase().includes('opus-4.8') || 
     requestedModel.toLowerCase().includes('opus 4.8') || 
@@ -1158,16 +1167,31 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
       const data = await response.json();
       const resultText = data.choices?.[0]?.message?.content || JSON.stringify(data);
 
-      const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
-      const tokensInput = Math.max(1, Math.ceil(inputChars / 4));
-      const tokensOutput = Math.max(1, Math.ceil((resultText || '').length / 4));
-      const totalTokens = tokensInput + tokensOutput;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      if (data.usage) {
+        promptTokens = data.usage.prompt_tokens || 0;
+        completionTokens = data.usage.completion_tokens || 0;
+      }
+
+      // Fallback if usage is not present or invalid
+      if (promptTokens <= 0 || completionTokens <= 0) {
+        const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+        promptTokens = Math.max(1, Math.ceil(inputChars / 4));
+        completionTokens = Math.max(1, Math.ceil((resultText || '').length / 4));
+      }
+
+      const totalTokens = promptTokens + completionTokens;
 
       if (userEmail) {
         recordUserRequest(userEmail.toLowerCase().trim(), totalTokens);
       }
 
-      return resultText;
+      return {
+        text: resultText,
+        promptTokens,
+        completionTokens
+      };
     } catch (err: any) {
       console.error("[Kesar/Omega Bypass] Failed calling KesarCloud, falling back to other configs:", err);
     }
@@ -1200,6 +1224,8 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
 
     try {
       let resultText = '';
+      let promptTokens = 0;
+      let completionTokens = 0;
       let endpoint = config.endpoint_url || 'https://api.cohere.com/v2/chat';
       
       // Normalize Cohere endpoint if it's missing the API version and method path
@@ -1235,6 +1261,10 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         if (response.ok) {
           const data = await response.json();
           resultText = extractTextFromCohereContent(data.message?.content) || JSON.stringify(data);
+          if (data.usage) {
+            promptTokens = data.usage.billed_tokens?.input_tokens || data.usage.tokens?.input_tokens || data.usage.input_tokens || 0;
+            completionTokens = data.usage.billed_tokens?.output_tokens || data.usage.tokens?.output_tokens || data.usage.output_tokens || 0;
+          }
         } else {
           const errText = await response.text();
           const isQuota = response.status === 429 || errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('limit');
@@ -1264,6 +1294,10 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         if (responseV1.ok) {
           const dataV1 = await responseV1.json();
           resultText = dataV1.text || JSON.stringify(dataV1);
+          if (dataV1.meta && dataV1.meta.billed_tokens) {
+            promptTokens = dataV1.meta.billed_tokens.input_tokens || 0;
+            completionTokens = dataV1.meta.billed_tokens.output_tokens || 0;
+          }
         } else {
           const errText = await responseV1.text();
           const isQuota = responseV1.status === 429 || errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('limit');
@@ -1291,6 +1325,10 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         if (responseGeneric.ok) {
           const dataGeneric = await responseGeneric.json();
           resultText = dataGeneric.choices?.[0]?.message?.content || JSON.stringify(dataGeneric);
+          if (dataGeneric.usage) {
+            promptTokens = dataGeneric.usage.prompt_tokens || 0;
+            completionTokens = dataGeneric.usage.completion_tokens || 0;
+          }
         } else {
           const errText = await responseGeneric.text();
           const isQuota = responseGeneric.status === 429 || errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('limit');
@@ -1299,10 +1337,13 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         }
       }
 
-      const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
-      const tokensInput = Math.max(1, Math.ceil(inputChars / 4));
-      const tokensOutput = Math.max(1, Math.ceil((resultText || '').length / 4));
-      const totalTokens = tokensInput + tokensOutput;
+      if (promptTokens <= 0 || completionTokens <= 0) {
+        const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+        promptTokens = Math.max(1, Math.ceil(inputChars / 4));
+        completionTokens = Math.max(1, Math.ceil((resultText || '').length / 4));
+      }
+
+      const totalTokens = promptTokens + completionTokens;
 
       // Track rolling limits
       recordUpstreamRequest(config.id, totalTokens);
@@ -1322,7 +1363,11 @@ async function callDynamicAPI(messages: any[], requestedModel?: string, userEmai
         saveUpstreamConfigsLocal(localList);
       }
 
-      return resultText;
+      return {
+        text: resultText,
+        promptTokens,
+        completionTokens
+      };
 
     } catch (err: any) {
       console.error(`[Failover] Config "${config.label}" failed:`, err);
@@ -1368,6 +1413,22 @@ async function callCohereAPI(messages: any[], model: string = 'command-a-03-2025
     return await callDynamicAPI(messages, model, userEmail);
   } catch (err: any) {
     return `❌ **Aira.Ai Gateway API Error**: ${err.message}`;
+  }
+}
+
+async function callCohereAPIWithUsage(messages: any[], model: string = 'command-a-03-2025', userEmail?: string) {
+  try {
+    return await callDynamicAPIWithUsage(messages, model, userEmail);
+  } catch (err: any) {
+    const errorText = `❌ **Aira.Ai Gateway API Error**: ${err.message}`;
+    const inputChars = messages.reduce((sum, m) => sum + (m && typeof m.content === 'string' ? m.content.length : 0), 0);
+    const promptTokens = Math.max(1, Math.ceil(inputChars / 4));
+    const completionTokens = Math.max(1, Math.ceil(errorText.length / 4));
+    return {
+      text: errorText,
+      promptTokens,
+      completionTokens
+    };
   }
 }
 
@@ -3692,11 +3753,10 @@ app.post('/api/gateway/chat', async (req, res) => {
   }
 
   try {
-    const responseText = await callCohereAPI(messages, requestedModel);
-    
-    // Calculate simulated/realistic tokens
-    const promptTokens = messages.length * 12;
-    const completionTokens = Math.ceil(responseText.length / 4);
+    const apiResult = await callCohereAPIWithUsage(messages, requestedModel);
+    const responseText = apiResult.text;
+    const promptTokens = apiResult.promptTokens;
+    const completionTokens = apiResult.completionTokens;
     const totalTokens = promptTokens + completionTokens;
 
     // Save/update the metrics in our memory store
