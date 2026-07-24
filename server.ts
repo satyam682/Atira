@@ -3768,7 +3768,7 @@ app.post('/api/gateway/chat', async (req, res) => {
 
     // Deduct calculated token costs from user balance in real-time
     if (userEmail) {
-      const calculatedCost = parseFloat(((promptTokens * 5.00 / 1000000) + (completionTokens * 15.00 / 1000000)).toFixed(6));
+      const calculatedCost = parseFloat(((promptTokens * 5.00 / 1000000) + (completionTokens * 25.00 / 1000000)).toFixed(6));
 
       if (useSupabase && supabaseClient) {
         try {
@@ -5068,9 +5068,9 @@ app.get('/api/admin/billing-stats', async (req, res) => {
       const totalInput = userKeys.reduce((acc, k) => acc + k.inputTokens, 0);
       const totalOutput = userKeys.reduce((acc, k) => acc + k.outputTokens, 0);
       
-      // Calculate costs: $5.00/MTok input, $15.00/MTok output (as estimated from the image columns)
+      // Calculate costs: $5.00/MTok input, $25.00/MTok output
       const inputCost = (totalInput * 5.00) / 1000000;
-      const outputCost = (totalOutput * 15.00) / 1000000;
+      const outputCost = (totalOutput * 25.00) / 1000000;
       const totalBill = inputCost + outputCost;
 
       return {

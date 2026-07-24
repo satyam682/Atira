@@ -2624,7 +2624,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                     <td className="p-3 pl-4 font-sans font-semibold text-ink">Opus (GLM-5p2 / Claude Bypass)</td>
                     <td className="p-3">$5.00 / MTok</td>
                     <td className="p-3">$6.25 / MTok</td>
-                    <td className="p-3">$15.00 / MTok</td>
+                    <td className="p-3">$25.00 / MTok</td>
                     <td className="p-3">$0.50 / MTok</td>
                     <td className="p-3">$25.00 / MTok</td>
                   </tr>
@@ -2733,7 +2733,7 @@ export function AdminPanelView({ showToast }: ViewProps) {
                         </tr>
                       ) : (
                         selectedUserBilling.keys.map((k: any) => {
-                          const kBill = ((k.inputTokens * 5.00) / 1000000) + ((k.outputTokens * 15.00) / 1000000);
+                          const kBill = ((k.inputTokens * 5.00) / 1000000) + ((k.outputTokens * 25.00) / 1000000);
                           return (
                             <tr key={k.key}>
                               <td className="p-3 pl-4">
