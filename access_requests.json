@@ -1,45 +1,45 @@
 [
   {
+    "id": "req-1783959535293-8ndn3ssol",
+    "name": "Pawan ",
+    "email": "pawankumar.pasula@gmail.com",
+    "status": "approved",
+    "credits": 300,
+    "rpmLimit": 60,
+    "creditsExpiry": "2026-08-12T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-13T16:18:55.293Z",
+    "approvedAt": "2026-07-13T16:32:04.791Z"
+  },
+  {
     "id": "req-1783448509743-d1xletu99",
     "name": "aryan somani",
     "email": "aryansomani9122007@gmail.com",
     "status": "approved",
-    "credits": 148.7337,
-    "rpmLimit": 60,
+    "credits": 0,
+    "rpmLimit": 10,
     "creditsExpiry": "2026-08-06T00:00:00.000Z",
     "approvedBy": "satyamkadavla79@gmail.com",
     "createdAt": "2026-07-07T18:21:49.744Z",
-    "approvedAt": "2026-07-07T18:22:04.068Z"
+    "approvedAt": "2026-07-11T07:31:02.959Z"
   },
   {
-    "id": "req-1783173819035-h4pb2fki8",
-    "name": "satyam",
-    "email": "satyamkadavla@gmail.com",
+    "id": "req-1783759836146-o2zi9406a",
+    "name": "Purshottam ",
+    "email": "officialpursottam@gmail.com",
     "status": "approved",
-    "credits": 20,
-    "rpmLimit": 60,
-    "creditsExpiry": "2026-08-03T00:00:00.000Z",
+    "credits": 5,
+    "rpmLimit": 50,
+    "creditsExpiry": "2026-08-11T00:00:00.000Z",
     "approvedBy": "satyamkadavla79@gmail.com",
-    "createdAt": "2026-07-04T14:03:39.035Z",
-    "approvedAt": "2026-07-04T14:04:03.588Z"
-  },
-  {
-    "id": "req-1783174970743-5udqxoocm",
-    "name": "satyam",
-    "email": "satyam@gmail.com",
-    "status": "approved",
-    "credits": 148.4891,
-    "rpmLimit": 60,
-    "creditsExpiry": "2026-08-03T00:00:00.000Z",
-    "approvedBy": "satyamkadavla79@gmail.com",
-    "createdAt": "2026-07-04T14:22:50.743Z",
-    "approvedAt": "2026-07-04T14:41:04.973Z"
+    "createdAt": "2026-07-11T08:50:36.146Z",
+    "approvedAt": "2026-07-11T08:50:36.146Z"
   },
   {
     "id": "req-1783238653882-wavd68qpn",
     "name": "sunil",
     "email": "sunil@gmail.com",
-    "status": "pending",
+    "status": "rejected",
     "credits": null,
     "rpmLimit": null,
     "creditsExpiry": null,
@@ -48,39 +48,63 @@
     "approvedAt": null
   },
   {
+    "id": "req-1783761318076-xqbvmxim3",
+    "name": "Suryapal",
+    "email": "11suryapal@gmail.com",
+    "status": "approved",
+    "credits": 5,
+    "rpmLimit": 50,
+    "creditsExpiry": "2026-08-10T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-11T09:15:18.077Z",
+    "approvedAt": "2026-07-11T09:15:18.076Z"
+  },
+  {
+    "id": "req-1783767848189-jsv05vaq6",
+    "name": "Namneet",
+    "email": "nameet158@gmail.com",
+    "status": "approved",
+    "credits": 99.999265,
+    "rpmLimit": 50,
+    "creditsExpiry": "2026-08-10T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-11T11:04:08.189Z",
+    "approvedAt": "2026-07-11T11:04:08.189Z"
+  },
+  {
+    "id": "req-1783761939156-jko0e6l2g",
+    "name": "Meda",
+    "email": "meda.revanth@gmail.com",
+    "status": "approved",
+    "credits": 3.87044,
+    "rpmLimit": 50,
+    "creditsExpiry": "2026-08-10T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-11T09:25:39.156Z",
+    "approvedAt": "2026-07-11T09:26:13.357Z"
+  },
+  {
+    "id": "req-1783856052001-nfto94j92",
+    "name": "Smit Lakhani",
+    "email": "smitlakhani13@gmail.com",
+    "status": "approved",
+    "credits": 999.91615,
+    "rpmLimit": 50,
+    "creditsExpiry": "2026-08-11T00:00:00.000Z",
+    "approvedBy": "satyamkadavla79@gmail.com",
+    "createdAt": "2026-07-12T11:34:12.001Z",
+    "approvedAt": "2026-07-13T18:51:17.335Z"
+  },
+  {
     "id": "admin-req",
     "name": "Admin User",
-    "email": "satyamkadavla79@gmail.com",
+    "email": "aryansomani9@gmail.com",
     "status": "approved",
-    "credits": 9997.84665,
+    "credits": 9999,
     "rpmLimit": 1000,
-    "creditsExpiry": "2027-07-08T07:09:39.980Z",
+    "creditsExpiry": "2027-07-22T05:57:17.241Z",
     "approvedBy": "system",
-    "createdAt": "2026-07-08T07:09:39.980Z",
-    "approvedAt": "2026-07-08T07:09:39.980Z"
-  },
-  {
-    "id": "req-1783188129070-gjqxdbq3s",
-    "name": "rahul",
-    "email": "rahul@gmail.com",
-    "status": "approved",
-    "credits": 150,
-    "rpmLimit": 60,
-    "creditsExpiry": "2026-08-06T00:00:00.000Z",
-    "approvedBy": "satyamkadavla79@gmail.com",
-    "createdAt": "2026-07-04T18:02:09.070Z",
-    "approvedAt": "2026-07-07T06:43:20.184Z"
-  },
-  {
-    "id": "req-1783403420002-plapxx6fz",
-    "name": "sohil",
-    "email": "shohil@gmail.com",
-    "status": "approved",
-    "credits": 150,
-    "rpmLimit": 1000000,
-    "creditsExpiry": "2026-08-06T00:00:00.000Z",
-    "approvedBy": "satyamkadavla79@gmail.com",
-    "createdAt": "2026-07-07T05:50:20.002Z",
-    "approvedAt": "2026-07-07T14:36:13.565Z"
+    "createdAt": "2026-07-22T05:57:17.241Z",
+    "approvedAt": "2026-07-22T05:57:17.241Z"
   }
 ]
