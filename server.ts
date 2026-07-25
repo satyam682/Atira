@@ -1165,13 +1165,26 @@ async function callDynamicAPIWithUsage(
       }
 
       const data = await response.json();
-      const resultText = data.choices?.[0]?.message?.content || JSON.stringify(data);
+      
+      let resultText = '';
+      if (data.content && Array.isArray(data.content)) {
+        resultText = data.content.map((c: any) => typeof c === 'string' ? c : (c.text || c.content || '')).join('\n').trim();
+      } else if (data.choices && data.choices[0]?.message?.content) {
+        const contentVal = data.choices[0].message.content;
+        resultText = typeof contentVal === 'string' ? contentVal : extractTextFromCohereContent(contentVal);
+      } else if (typeof data.content === 'string') {
+        resultText = data.content;
+      } else if (typeof data.text === 'string') {
+        resultText = data.text;
+      } else {
+        resultText = JSON.stringify(data);
+      }
 
       let promptTokens = 0;
       let completionTokens = 0;
       if (data.usage) {
-        promptTokens = data.usage.prompt_tokens || 0;
-        completionTokens = data.usage.completion_tokens || 0;
+        promptTokens = data.usage.input_tokens || data.usage.prompt_tokens || 0;
+        completionTokens = data.usage.output_tokens || data.usage.completion_tokens || 0;
       }
 
       // Fallback if usage is not present or invalid
