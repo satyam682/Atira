@@ -1127,16 +1127,16 @@ async function callDynamicAPIWithUsage(
         content: m.content
       }));
 
-      let modelName = "claude-opus-4.8";
+      let modelName = "claude-opus-4-8";
       let maxTokens = 8192;
       if (isOpus48) {
-        modelName = "claude-opus-4.8";
+        modelName = "claude-opus-4-8";
         maxTokens = 8192;
       } else if (isOpus47) {
-        modelName = "claude-opus-4.7";
+        modelName = "claude-opus-4-7";
         maxTokens = 4096;
       } else if (isOpus46) {
-        modelName = "claude-opus-4.6";
+        modelName = "claude-opus-4-6";
         maxTokens = 4096;
       }
 
@@ -3434,10 +3434,9 @@ app.post('/api/chat', async (req, res) => {
     const userEmail = req.headers['x-user-email'] as string || req.body.email || '';
     if (userEmail) {
       const emailLower = userEmail.toLowerCase().trim();
-      const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'satyamkadavla79@gmail.com').toLowerCase();
       const userReq = await getAccessRequestByEmail(emailLower);
 
-      if (emailLower === ADMIN_EMAIL) {
+      if (isAdminEmail(emailLower)) {
         // Admin bypasses all blocks
       } else if (!userReq || userReq.status !== 'approved') {
         return res.status(403).json({ error: "Access Denied: Your registration request is pending or not found. Please contact the admin." });
@@ -4782,7 +4781,21 @@ app.get('/api/users/profile', async (req, res) => {
     const email = req.query.email as string;
     if (!email) return res.status(400).json({ error: 'Email parameter required.' });
 
-    const userReq = await getAccessRequestByEmail(email);
+    let userReq = await getAccessRequestByEmail(email);
+    if (!userReq && isAdminEmail(email)) {
+      userReq = {
+        id: 'admin-req',
+        name: 'Admin User',
+        email: email.trim().toLowerCase(),
+        status: 'approved',
+        credits: 9999.00,
+        rpmLimit: 1000,
+        creditsExpiry: new Date(Date.now() + 365 * 24 * 3600000).toISOString(),
+        approvedBy: 'system',
+        createdAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString()
+      };
+    }
     if (!userReq) return res.status(404).json({ error: 'User not found.' });
 
     const isAdmin = isAdminEmail(email);
