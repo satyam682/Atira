@@ -1116,7 +1116,7 @@ async function callDynamicAPIWithUsage(
 
   if (shouldBypassToKesar) {
     try {
-      const endpoint = "https://omega.kesarcloud.in/v1/chat/completions";
+      const endpoint = "https://api.omegaplusapi.com/v1/chat/completions";
       const omegaApiKey = process.env.OMEGA_API_KEY;
       if (!omegaApiKey) {
         throw new Error("OMEGA_API_KEY environment variable is not configured. Please set it in your environment or Railway variables.");
